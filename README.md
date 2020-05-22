@@ -1,5 +1,10 @@
 # Car ML Simulator
 
+## Sumo Output
+In Terminal:  
+1. cd into the directory
+2. ```sumo -c osm.sumocfg --fcd-output 'filename'.xml```
+
 ## Classes:
 - Vehicle
   - car_id
