@@ -1,4 +1,4 @@
-# CarML-Simulator
+# Car ML Simulator
 
 ## Classes:
 - Vehicle
