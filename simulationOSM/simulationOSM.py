@@ -21,9 +21,11 @@ class RSU:
         self.rsu_x_range = [rsu_x - rsu_range, rsu_x + rsu_range]
         self.rsu_y_range = [rsu_y - rsu_range, rsu_y + rsu_range]
 
+
 class Dataset:
-    def __init__(self, ROU_file):
+    def __init__(self, ROU_file, NET_file):
         self.ROU_file = ROU_file
+        self.NET_file = NET_file
 
     def vehicleDict(self, comp_power, comp_power_std, bandwidth, bandwidth_std):
         tree = ET.parse(self.ROU_file)
@@ -33,27 +35,49 @@ class Dataset:
             vehicleDict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'], comp_power, comp_power_std, bandwidth, bandwidth_std)
         return vehicleDict
 
-class Simulation:
-    def __init__(self, FCD_file, vehicleDict: dict, rsuList: list, num_tasks):
+    def RSUList(self, range, nums):
+        tree = ET.parse(self.NET_file)
+        root = tree.getroot()
+        RSUList = []
+        junctionList = np.random.choice(root.findall('junction'), nums, replace=False)
+        for i in range(nums):
+            id = 'rsu' + str(i)
+            RSUList.append(RSU(id, junctionList[i].attrib['x'], junctionList[i].attrib['y'], range))
+        return RSUList
+
+    def RSURangeList(self, range, nums):
+        tree = ET.parse(self.NET_file)
+        root = tree.getroot()
+        RSURangeX = []
+        RSURangeY = []
+        junctionList = np.random.choice(root.findall('junction'), nums, replace=False)
+        for junction in junctionList:
+            junct = junction.attrib
+            RSURangeX.append((float(junct['x']) - range, float(junct['x']) + range))
+            RSURangeY.append((float(junct['y']) - range, float(junct['y']) + range))
+        return (RSURangeX, RSURangeY)
+            
+    # def merge(self, intervals):
+    #     out = []
+    #     for i in sorted(intervals, key=lambda i: i[0]):
+    #         if out and i[0]<=out[-1][-1]:
+    #             out[-1][-1] = max(out[-1][-1], i[-1])
+    #         else: out+=[i]
+    #     return out
+
+
+class Communication:
+    def __init__(self, FCD_file, vehicleDict: dict, rsuRange: tuple, num_tasks):
         self.FCD_file = FCD_file
         self.vehicleDict = vehicleDict
-        self.rsuList = rsuList
+        self.rsu_x_range = rsuRange[0]
+        self.rsu_y_range = rsuRange[1]
         self.num_tasks = num_tasks
         self.num_tasks_distributed = num_tasks / len(vehicleDict)
 
-    def merge(self, intervals):
-        out = []
-        for i in sorted(intervals, key=lambda i: i[0]):
-            if out and i[0]<=out[-1][-1]:
-                out[-1][-1] = max(out[-1][-1], i[-1])
-            else: out+=[i]
-        return out
-
-    def simulate(self):
+    def communicate(self):
         tree = ET.parse(self.FCD_file)
         root = tree.getroot()
-        rsu_x_range = self.merge(map(lambda x: x.rsu_x_range, self.rsuList))
-        rsu_y_range = self.merge(map(lambda x: x.rsu_y_range, self.rsuList))
         for timestep in root:
             for vehicle in timestep.findall('vehicle'):
                 vehi = self.vehicleDict[vehicle.attrib['id']]
@@ -62,10 +86,10 @@ class Simulation:
                 vehi.speed = float(vehicle.attrib['speed'])
                 inRangeX = False
                 inRangeY = False
-                for x_min, x_max in rsu_x_range:
+                for x_min, x_max in self.rsu_x_range:
                     if x_min <= vehi.x <= x_max:
                         inRangeX = True
-                for y_min, y_max in rsu_y_range:
+                for y_min, y_max in self.rsu_y_range:
                     if y_min <= vehi.y <= y_max:
                         inRangeY = True
                 if inRangeX and inRangeY:
@@ -78,13 +102,14 @@ class Simulation:
         print('Cannot Process All')
         return timestep.attrib['time']
 
+
 def main():
     num_tasks = 1000
-    data = Dataset('osm_boston_common/osm.passenger.trips.xml')
+    data = Dataset('osm_boston_common/osm.passenger.trips.xml', 'osm_boston_common/osm.net.xml')
     vehicleDict = data.vehicleDict(10, 2, 0, 0)
-    rsu_1 = RSU('rsu_1', 2500, 3500, 00)
-    simulation1 = Simulation('osm_boston_common/osm_fcd.xml', vehicleDict, [rsu_1], num_tasks)
-    timeStep = simulation1.simulate()
+    rsuRange = data.RSURangeList(300, 2)
+    simulation1 = Communication('osm_boston_common/osm_fcd.xml', vehicleDict, rsuRange, num_tasks)
+    timeStep = simulation1.communicate()
     print(timeStep)
 
 main()
