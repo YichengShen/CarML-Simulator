@@ -7,10 +7,21 @@ class Vehicle:
         self.x = 0
         self.y = 0
         self.speed = 0
-        self.tasks_remaining = 200
         self.comp_power = np.random.normal(comp_power, comp_power_std)
+        self.tasks_distributed = self.comp_power * 20
+        self.tasks_remaining = self.tasks_distributed
         self.bandwidth = np.random.normal(bandwidth, bandwidth_std)
-    
+        self.comm_time = 10 * (0.5 + 1 / self.bandwidth)
+        self.download_time = self.comm_time
+        self.upload_time = self.comm_time
+
+    def downloaded(self):
+        self.download_time -= 1
+        return self.download_time <= 0
+
+    def uploaded(self):
+        self.upload_time -= 1
+        return self.download_time <= 0
 
 class RSU:
     def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range):
@@ -73,7 +84,6 @@ class Communication:
         self.rsu_x_range = rsuRange[0]
         self.rsu_y_range = rsuRange[1]
         self.num_tasks = num_tasks
-        self.num_tasks_distributed = num_tasks / len(vehicleDict)
 
     def communicate(self):
         tree = ET.parse(self.FCD_file)
@@ -93,20 +103,26 @@ class Communication:
                     if y_min <= vehi.y <= y_max:
                         inRangeY = True
                 if inRangeX and inRangeY:
-                    if vehi.tasks_remaining > 0:
-                        vehi.tasks_remaining -= vehi.comp_power
-                        if vehi.tasks_remaining <= 0:
-                            self.num_tasks -= self.num_tasks_distributed
-                            if self.num_tasks <= 0:
-                                return timestep.attrib['time']
+                    if vehi.downloaded():
+                        vehi.upload_time = vehi.comm_time
+                        if vehi.tasks_remaining > 0:
+                            vehi.tasks_remaining -= vehi.comp_power
+                            if vehi.tasks_remaining <= 0:
+                                if vehi.uploaded():
+                                    vehi.tasks_remaining = vehi.tasks_distributed
+                                    vehi.upload_time = vehi.comm_time
+                                    self.num_tasks -= vehi.tasks_distributed
+                                    print(self.num_tasks)
+                                    if self.num_tasks <= 0:
+                                        return timestep.attrib['time']
         print('Cannot Process All')
         return timestep.attrib['time']
 
 
 def main():
-    num_tasks = 1000
+    num_tasks = 20000
     data = Dataset('osm_boston_common/osm.passenger.trips.xml', 'osm_boston_common/osm.net.xml')
-    vehicleDict = data.vehicleDict(10, 2, 0, 0)
+    vehicleDict = data.vehicleDict(10, 2, 10, 2)
     rsuRange = data.RSURangeList(300, 2)
     simulation1 = Communication('osm_boston_common/osm_fcd.xml', vehicleDict, rsuRange, num_tasks)
     timeStep = simulation1.communicate()
