@@ -5,7 +5,16 @@ In Terminal:
 1. cd into the directory
 2. ```sumo -c osm.sumocfg --fcd-output 'filename'.xml```
 
-## Classes:
+## Simulation Process
+1. Loop through all vehicles in every timestep
+2. For each vehicle,
+  - Check if it is in RSU ranges
+  - Check if there are tasks left
+  - If yes, update the timer for the vehicle
+  - Upon completions of downloads, computations, and uploads, update the total time
+3. Print results (the total time and status of completion)
+
+## Classes
 - Simulation
   - env
   - FCD_file
