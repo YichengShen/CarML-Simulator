@@ -1,7 +1,22 @@
-import numpy as np 
-import xml.etree.ElementTree as ET 
+import numpy as np
+import xml.etree.ElementTree as ET
 
 class Vehicle:
+    """
+    Vehicle object for Car ML Simulator.
+    Attributes:
+    - car_id
+    - x
+    - y
+    - speed
+    - comp_power
+    - tasks_distributed
+    - tasks_remaining
+    - bandwidth
+    - comm_time
+    - download_time
+    - upload_time
+    """
     def __init__(self, car_id, comp_power, comp_power_std, bandwidth, bandwidth_std):
         self.car_id = car_id
         self.x = 0
@@ -24,6 +39,16 @@ class Vehicle:
         return self.download_time <= 0
 
 class RSU:
+    """
+    Road Side Unit object for Car ML Simulator.
+    Attributes:
+    - rsu_id
+    - rsu_x
+    - rsu_y
+    - rsu_range
+    - rsu_x_range
+    - rsu_y_range
+    """
     def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range):
         self.rsu_id = rsu_id
         self.rsu_x = rsu_x
@@ -34,6 +59,12 @@ class RSU:
 
 
 class Dataset:
+    """
+    Data read from SUMO XML files.
+    Attributes:
+    - ROU_file
+    - NET_file
+    """
     def __init__(self, ROU_file, NET_file):
         self.ROU_file = ROU_file
         self.NET_file = NET_file
@@ -76,57 +107,19 @@ class Dataset:
     #         else: out+=[i]
     #     return out
 
-
-class Communication:
+class Simulation:
+    """
+    Simulation object for Car ML Simulator.
+    Attributes:
+    - FCD_file
+    - vehicleDict
+    - rsu_x_range
+    - rsu_y_range
+    - num_tasks
+    """
     def __init__(self, FCD_file, vehicleDict: dict, rsuRange: tuple, num_tasks):
         self.FCD_file = FCD_file
         self.vehicleDict = vehicleDict
         self.rsu_x_range = rsuRange[0]
         self.rsu_y_range = rsuRange[1]
         self.num_tasks = num_tasks
-
-    def communicate(self):
-        tree = ET.parse(self.FCD_file)
-        root = tree.getroot()
-        for timestep in root:
-            for vehicle in timestep.findall('vehicle'):
-                vehi = self.vehicleDict[vehicle.attrib['id']]
-                vehi.x = float(vehicle.attrib['x'])
-                vehi.y = float(vehicle.attrib['y'])
-                vehi.speed = float(vehicle.attrib['speed'])
-                inRangeX = False
-                inRangeY = False
-                for x_min, x_max in self.rsu_x_range:
-                    if x_min <= vehi.x <= x_max:
-                        inRangeX = True
-                for y_min, y_max in self.rsu_y_range:
-                    if y_min <= vehi.y <= y_max:
-                        inRangeY = True
-                if inRangeX and inRangeY:
-                    if vehi.downloaded():
-                        vehi.upload_time = vehi.comm_time
-                        if vehi.tasks_remaining > 0:
-                            vehi.tasks_remaining -= vehi.comp_power
-                            if vehi.tasks_remaining <= 0:
-                                if vehi.uploaded():
-                                    vehi.tasks_remaining = vehi.tasks_distributed
-                                    vehi.upload_time = vehi.comm_time
-                                    self.num_tasks -= vehi.tasks_distributed
-                                    print(self.num_tasks)
-                                    if self.num_tasks <= 0:
-                                        return timestep.attrib['time']
-        print('Cannot Process All')
-        return timestep.attrib['time']
-
-
-def main():
-    num_tasks = 20000
-    data = Dataset('osm_boston_common/osm.passenger.trips.xml', 'osm_boston_common/osm.net.xml')
-    vehicleDict = data.vehicleDict(10, 2, 10, 2)
-    rsuRange = data.RSURangeList(300, 2)
-    simulation1 = Communication('osm_boston_common/osm_fcd.xml', vehicleDict, rsuRange, num_tasks)
-    timeStep = simulation1.communicate()
-    print(timeStep)
-
-main()
-

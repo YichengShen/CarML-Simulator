@@ -60,21 +60,7 @@ class Vehicle:
 
     def uploaded(self):
         return self.task_timer == (self.bandwidth * 2 + self.comp_power)
-
-    # UPDATE total time
-    def download_data(self, env):
-        download_time = self.bandwidth
-        yield env.timeout(download_time)
-
-    def compute(self, env):
-        computation_time = self.comp_power
-        yield env.timeout(computation_time)
-
-    def upload_result(self, env):
-        upload_time = self.bandwidth
-        yield env.timeout(upload_time)
     
-
 
 class RSU:
     """
