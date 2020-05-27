@@ -37,7 +37,7 @@ def simulate(simulation):
                         # If finish uploading
                         if vehi.uploaded():
                             vehi.tasks_remaining = vehi.tasks_distributed
-                            vehi.upload_time = vehi.comm_time
+                            vehi.download_time = vehi.comm_time
                             simulation.num_tasks -= vehi.tasks_distributed
                             # If all tasks are finished
                             if simulation.num_tasks <= 0:
