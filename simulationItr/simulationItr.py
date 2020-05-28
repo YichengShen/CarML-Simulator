@@ -16,33 +16,29 @@ def simulate(simulation):
             vehi.x = float(vehicle.attrib['x'])
             vehi.y = float(vehicle.attrib['y'])
             vehi.speed = float(vehicle.attrib['speed'])
-            # Range Check
-            inRangeX = False
-            inRangeY = False
-            for x_min, x_max in simulation.rsu_x_range:
-                if x_min <= vehi.x <= x_max:
-                    inRangeX = True
-            for y_min, y_max in simulation.rsu_y_range:
-                if y_min <= vehi.y <= y_max:
-                    inRangeY = True
-            # If in range
-            if inRangeX and inRangeY:
-                # If finish downloading
-                if vehi.downloaded():
-                    vehi.upload_time = vehi.comm_time
-                    if vehi.tasks_remaining > 0:
-                        vehi.tasks_remaining -= vehi.comp_power
-                    # If finish assigned tasks
-                    if vehi.tasks_remaining <= 0:
-                        # If finish uploading
-                        if vehi.uploaded():
-                            vehi.tasks_remaining = vehi.tasks_distributed
-                            vehi.download_time = vehi.comm_time
-                            simulation.num_tasks -= vehi.tasks_distributed
-                            # If all tasks are finished
-                            if simulation.num_tasks <= 0:
-                                print("\nAll {} tasks were completed in {} units of time.\n".format(totalTasks, timestep.attrib['time']))
-                                return
+            # Download if not finished downloading
+            if vehi.download_time > 0:
+                vehi.download_from_rsu(simulation.rsuList)
+            # If finished downloading
+            if vehi.download_time <= 0:
+                # Compute when there are still tasks left
+                if vehi.tasks_remaining > 0:
+                    vehi.compute()
+                # If finished computing
+                if vehi.tasks_remaining <= 0:
+                    # Upload if not finished uploading
+                    if vehi.upload_time > 0:
+                        vehi.upload_to_rsu(simulation.rsuList)
+                    # If finished uploading
+                    if vehi.upload_time <= 0:
+                        simulation.num_tasks -= vehi.tasks_assigned
+                        vehi.download_time = vehi.comm_time
+                        vehi.upload_time = vehi.comm_time
+                        vehi.tasks_remaining = vehi.tasks_assigned
+            # If all tasks are finished
+            if simulation.num_tasks <= 0:
+                print("\nAll {} tasks were completed in {} units of time.\n".format(totalTasks, timestep.attrib['time']))
+                return
     # If some tasks aren't finished after running through all the timestpes
     print("\nAll vehicles left the RSU ranges when {} tasks were left.\n".format(simulation.num_tasks))
 
@@ -51,7 +47,7 @@ def main():
     ROU_FILE = 'osm_boston_common/osm.passenger.trips.xml'
     NET_FILE = 'osm_boston_common/osm.net.xml'
     FCD_FILE = 'osm_boston_common/osm_fcd.xml'
-    NUM_TASKS = 300000    # number of tasks
+    NUM_TASKS = 100000    # number of tasks
     COMP_POWER = 5        # computation power of cars
     COMP_POWER_STD = 1    # standard deviation
     BANDWIDTH = 10        # bandwidth of cars
@@ -61,8 +57,8 @@ def main():
 
     data = Dataset(ROU_FILE, NET_FILE)
     vehicleDict = data.vehicleDict(COMP_POWER, COMP_POWER_STD, BANDWIDTH, BANDWIDTH_STD)
-    rsuRange = data.RSURangeList(RSU_RANGE, NUM_RSU)
-    simulation = Simulation(FCD_FILE, vehicleDict, rsuRange, NUM_TASKS)
+    rsuList = data.rsuList(RSU_RANGE, NUM_RSU)
+    simulation = Simulation(FCD_FILE, vehicleDict, rsuList, NUM_TASKS)
     simulate(simulation)
 
 if __name__ == '__main__':
