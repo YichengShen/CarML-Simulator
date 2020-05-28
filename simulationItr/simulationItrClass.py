@@ -57,12 +57,39 @@ class RSU:
     - rsu_y
     - rsu_range
     """
-    def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range):
+    def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range, sample):
         self.rsu_id = rsu_id
         self.rsu_x = rsu_x
         self.rsu_y = rsu_y
         self.rsu_range = rsu_range
+        self.sample = sample
 
+
+class DataList:
+    def __init__(self, data_list_id, num_tasks):
+        self.data_list_id = data_list_id
+        self.num_tasks = num_tasks
+        self.data_list = [datum for datum in range(num_tasks)]
+    
+    def partition_data(self, num_RSU):
+        sampleDict = {}
+        sample_size = int(self.num_tasks / num_RSU)
+        sample_id = 0
+        for i in range(0, self.num_tasks - 1, sample_size):
+            if i + sample_size * 2 > self.num_tasks:
+                sample = self.data_list[i:]
+            else:
+                sample = self.data_list[i:i + sample_size]
+            sampleDict[sample_id] = DataSample(sample_id, self.data_list_id, sample)
+            sample_id += 1
+        return sampleDict
+
+
+class DataSample:
+    def __init__(self, sample_id, parent_id, sample):
+        self.sample_id = sample_id
+        self.parent_id = parent_id
+        self.sample = sample
 
 class Dataset:
     """
@@ -83,14 +110,15 @@ class Dataset:
             vehicleDict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'], comp_power, comp_power_std, bandwidth, bandwidth_std)
         return vehicleDict
 
-    def rsuList(self, rsu_range, rsu_nums):
+    def rsuList(self, rsu_range, rsu_nums, sample_dict):
         tree = ET.parse(self.NET_file)
         root = tree.getroot()
         RSUList = []
         junctionList = np.random.choice(root.findall('junction'), rsu_nums, replace=False)
         for i in range(rsu_nums):
             id = 'rsu' + str(i)
-            RSUList.append(RSU(id, float(junctionList[i].attrib['x']), float(junctionList[i].attrib['y']), rsu_range))
+            sample = sample_dict[i]
+            RSUList.append(RSU(id, float(junctionList[i].attrib['x']), float(junctionList[i].attrib['y']), rsu_range, sample))
         return RSUList
 
 class Simulation:

@@ -1,7 +1,7 @@
 import numpy as np 
 import xml.etree.ElementTree as ET 
 from simulationItrClass import Dataset 
-from simulationItrClass import Simulation
+from simulationItrClass import Simulation, DataList
 
 def simulate(simulation):
     tree = ET.parse(simulation.FCD_file)
@@ -57,7 +57,13 @@ def main():
 
     data = Dataset(ROU_FILE, NET_FILE)
     vehicleDict = data.vehicleDict(COMP_POWER, COMP_POWER_STD, BANDWIDTH, BANDWIDTH_STD)
-    rsuList = data.rsuList(RSU_RANGE, NUM_RSU)
+
+    data_to_learn = DataList(1, NUM_TASKS)
+    sample_dict = data_to_learn.partition_data(NUM_RSU)
+
+    rsuList = data.rsuList(RSU_RANGE, NUM_RSU, sample_dict)
+    for each in rsuList:
+        print(len(each.sample.sample))
     simulation = Simulation(FCD_FILE, vehicleDict, rsuList, NUM_TASKS)
     simulate(simulation)
 
