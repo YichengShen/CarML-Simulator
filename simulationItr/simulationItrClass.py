@@ -30,6 +30,7 @@ class Vehicle:
         self.comm_time = 10 * (0.5 + 1 / self.bandwidth)
         self.download_time = self.comm_time
         self.upload_time = self.comm_time
+        # Computed Array
 
     def download_from_rsu(self, rsuList):
         if self.inRange(rsuList):
@@ -48,6 +49,7 @@ class Vehicle:
                 return True
         return False
 
+
 class RSU:
     """
     Road Side Unit object for Car ML Simulator.
@@ -63,9 +65,13 @@ class RSU:
         self.rsu_y = rsu_y
         self.rsu_range = rsu_range
         self.sample = sample
+        # TASKS REMAINING 
+        # TASKS ASSIGNED
+        # DOWNLOADED
+        # RECEIVED RESULTS
 
-
-class DataList:
+class Task_Set:
+    """The dataset used to learn."""
     def __init__(self, data_list_id, num_tasks):
         self.data_list_id = data_list_id
         self.num_tasks = num_tasks
@@ -80,18 +86,18 @@ class DataList:
                 sample = self.data_list[i:]
             else:
                 sample = self.data_list[i:i + sample_size]
-            sampleDict[sample_id] = DataSample(sample_id, self.data_list_id, sample)
+            sampleDict[sample_id] = RSU_Subtasks(sample_id, self.data_list_id, sample)
             sample_id += 1
         return sampleDict
 
 
-class DataSample:
+class RSU_Subtasks:
     def __init__(self, sample_id, parent_id, sample):
         self.sample_id = sample_id
         self.parent_id = parent_id
         self.sample = sample
 
-class Dataset:
+class SUMO_Dataset:
     """
     Data read from SUMO XML files.
     Attributes:
@@ -120,6 +126,7 @@ class Dataset:
             sample = sample_dict[i]
             RSUList.append(RSU(id, float(junctionList[i].attrib['x']), float(junctionList[i].attrib['y']), rsu_range, sample))
         return RSUList
+
 
 class Simulation:
     """

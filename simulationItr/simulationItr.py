@@ -1,7 +1,7 @@
 import numpy as np 
 import xml.etree.ElementTree as ET 
-from simulationItrClass import Dataset 
-from simulationItrClass import Simulation, DataList
+from simulationItrClass import SUMO_Dataset 
+from simulationItrClass import Simulation, Task_Set
 
 def simulate(simulation):
     tree = ET.parse(simulation.FCD_file)
@@ -20,17 +20,17 @@ def simulate(simulation):
             if vehi.download_time > 0:
                 vehi.download_from_rsu(simulation.rsuList)
             # If finished downloading
-            if vehi.download_time <= 0:
+            else:
                 # Compute when there are still tasks left
                 if vehi.tasks_remaining > 0:
                     vehi.compute()
                 # If finished computing
-                if vehi.tasks_remaining <= 0:
+                else:
                     # Upload if not finished uploading
                     if vehi.upload_time > 0:
                         vehi.upload_to_rsu(simulation.rsuList)
                     # If finished uploading
-                    if vehi.upload_time <= 0:
+                    else:
                         simulation.num_tasks -= vehi.tasks_assigned
                         vehi.download_time = vehi.comm_time
                         vehi.upload_time = vehi.comm_time
@@ -55,10 +55,10 @@ def main():
     RSU_RANGE = 300       # range of RSU
     NUM_RSU = 2           # number of RSU
 
-    data = Dataset(ROU_FILE, NET_FILE)
+    data = SUMO_Dataset(ROU_FILE, NET_FILE)
     vehicleDict = data.vehicleDict(COMP_POWER, COMP_POWER_STD, BANDWIDTH, BANDWIDTH_STD)
 
-    data_to_learn = DataList(1, NUM_TASKS)
+    data_to_learn = Task_Set(1, NUM_TASKS)
     sample_dict = data_to_learn.partition_data(NUM_RSU)
 
     rsuList = data.rsuList(RSU_RANGE, NUM_RSU, sample_dict)
