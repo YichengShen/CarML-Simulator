@@ -45,8 +45,14 @@ class Vehicle:
     def inRange(self, rsuList):
         for rsu in rsuList:
             if math.sqrt((rsu.rsu_x - self.x) ** 2 + (rsu.rsu_y - self.y) ** 2) <= rsu.rsu_range:
+                # if has_data(rsu, datum):
                 return True
         return False
+    
+    def has_data(self, rsu, datum):
+        if datum in rsu.sample.sample:
+            return True
+
 
 class RSU:
     """
@@ -56,6 +62,7 @@ class RSU:
     - rsu_x
     - rsu_y
     - rsu_range
+    - sample
     """
     def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range, sample):
         self.rsu_id = rsu_id
