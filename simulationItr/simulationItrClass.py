@@ -13,10 +13,9 @@ class Vehicle:
     - comp_power
     - tasks_assigned
     - tasks_remaining
+    - rsu_assigned
     - bandwidth
-    - comm_time
-    - download_time
-    - upload_time
+    - computed_array
     """
     def __init__(self, car_id, comp_power, comp_power_std, bandwidth, bandwidth_std):
         self.car_id = car_id
@@ -24,31 +23,71 @@ class Vehicle:
         self.y = 0
         self.speed = 0
         self.comp_power = np.random.normal(comp_power, comp_power_std)
-        self.tasks_assigned = self.comp_power * 20
-        self.tasks_remaining = self.tasks_assigned
+        self.tasks_assigned = []
+        self.tasks_remaining = []
+        self.rsu_assigned = None
         self.bandwidth = np.random.normal(bandwidth, bandwidth_std)
-        self.comm_time = 10 * (0.5 + 1 / self.bandwidth)
-        self.download_time = self.comm_time
-        self.upload_time = self.comm_time
-        # Computed Array
+        self.computed_array = []
 
     def download_from_rsu(self, rsuList):
-        if self.inRange(rsuList):
-            self.download_time -= 1
+        rsu = self.in_range(rsuList)
+        if rsu:
+            if self.rsu_assigned == None:
+                self.rsu_assigned = rsu
+            if self.rsu_assigned == rsu:
+                for _ in range(int(self.bandwidth)):
+                    if rsu.tasks_unassigned:
+                        task = rsu.tasks_unassigned.pop()
+                        self.tasks_assigned.append(task)
+                        self.tasks_remaining.append(task)
+                        rsu.tasks_assigned.add(task)
+                    elif rsu.tasks_assigned:
+                        task = rsu.tasks_assigned.pop()
+                        self.tasks_assigned.append(task)
+                        self.tasks_remaining.append(task)
+                        rsu.tasks_assigned.add(task)
+                    else:
+                        return
+
+    def download_complete(self):
+        if len(self.tasks_assigned) < self.comp_power * 20:
+            return False
+        else:
+            for task in self.tasks_assigned:
+                self.rsu_assigned.tasks_assigned.discard(task)
+                self.rsu_assigned.tasks_downloaded.add(task)
+                return True
 
     def compute(self):
-        self.tasks_remaining -= self.comp_power
+        result = []
+        for _ in range(int(self.comp_power)):
+            if self.tasks_remaining:
+                result.append(self.tasks_remaining.pop())
+        self.computed_array.append(result)
+
+    def compute_complete(self):
+        return not self.tasks_remaining 
 
     def upload_to_rsu(self, rsuList):
-        if self.inRange(rsuList):
-            self.upload_time -= 1
+        rsu = self.in_range(rsuList)
+        if rsu:
+            rsu.received_results.append(self.computed_array.pop())
+    
+    def upload_complete(self):
+        if not self.computed_array:
+            return True
+        else:
+            return False
 
-    def inRange(self, rsuList):
+    def in_range(self, rsuList):
+        shortestDistance = 10000
+        closestRsu = None
         for rsu in rsuList:
-            if math.sqrt((rsu.rsu_x - self.x) ** 2 + (rsu.rsu_y - self.y) ** 2) <= rsu.rsu_range:
-                # if has_data(rsu, datum):
-                return True
-        return False
+            distance = math.sqrt((rsu.rsu_x - self.x) ** 2 + (rsu.rsu_y - self.y) ** 2)
+            if distance <= rsu.rsu_range and distance < shortestDistance:
+                shortestDistance = distance
+                closestRsu = rsu
+        return closestRsu
     
     def has_data(self, rsu, datum):
         if datum in rsu.sample.sample:
@@ -64,18 +103,21 @@ class RSU:
     - rsu_x
     - rsu_y
     - rsu_range
-    - sample
+    - tasks_unassigned
+    - tasks_assigned
+    - tasks_downloaded
+    - received_results
     """
-    def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range, sample):
+    def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range, tasks_unassigned):
         self.rsu_id = rsu_id
         self.rsu_x = rsu_x
         self.rsu_y = rsu_y
         self.rsu_range = rsu_range
-        self.sample = sample
-        # TASKS REMAINING 
-        # TASKS ASSIGNED
-        # DOWNLOADED
-        # RECEIVED RESULTS
+        self.tasks_unassigned = tasks_unassigned.sample
+        self.tasks_assigned = set()
+        self.tasks_downloaded = set()
+        self.received_results = []
+
 
 class Task_Set:
     """The dataset used to learn."""
@@ -90,9 +132,9 @@ class Task_Set:
         sample_id = 0
         for i in range(0, self.num_tasks - 1, sample_size):
             if i + sample_size * 2 > self.num_tasks:
-                sample = self.data_list[i:]
+                sample = set(self.data_list[i:])
             else:
-                sample = self.data_list[i:i + sample_size]
+                sample = set(self.data_list[i:i + sample_size])
             sampleDict[sample_id] = RSU_Subtasks(sample_id, self.data_list_id, sample)
             sample_id += 1
         return sampleDict

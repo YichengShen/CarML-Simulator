@@ -1,7 +1,6 @@
 import numpy as np 
 import xml.etree.ElementTree as ET 
-from simulationItrClass import SUMO_Dataset 
-from simulationItrClass import Simulation, Task_Set
+from simulationItrClass import SUMO_Dataset, Simulation, Task_Set
 
 def simulate(simulation):
     tree = ET.parse(simulation.FCD_file)
@@ -17,24 +16,22 @@ def simulate(simulation):
             vehi.y = float(vehicle.attrib['y'])
             vehi.speed = float(vehicle.attrib['speed'])
             # Download if not finished downloading
-            if vehi.download_time > 0:
+            if not vehi.download_complete():
                 vehi.download_from_rsu(simulation.rsuList)
             # If finished downloading
             else:
                 # Compute when there are still tasks left
-                if vehi.tasks_remaining > 0:
+                if not vehi.compute_complete():
                     vehi.compute()
                 # If finished computing
                 else:
                     # Upload if not finished uploading
-                    if vehi.upload_time > 0:
+                    if not vehi.upload_complete():
                         vehi.upload_to_rsu(simulation.rsuList)
-                    # If finished uploading
                     else:
-                        simulation.num_tasks -= vehi.tasks_assigned
-                        vehi.download_time = vehi.comm_time
-                        vehi.upload_time = vehi.comm_time
-                        vehi.tasks_remaining = vehi.tasks_assigned
+                        simulation.num_tasks -= len(vehi.tasks_assigned)
+                        vehi.tasks_assigned = []
+                        vehi.rsu_assigned = None
             # If all tasks are finished
             if simulation.num_tasks <= 0:
                 print("\nAll {} tasks were completed in {} units of time.\n".format(totalTasks, timestep.attrib['time']))
@@ -47,7 +44,7 @@ def main():
     ROU_FILE = 'osm_boston_common/osm.passenger.trips.xml'
     NET_FILE = 'osm_boston_common/osm.net.xml'
     FCD_FILE = 'osm_boston_common/osm_fcd.xml'
-    NUM_TASKS = 100000    # number of tasks
+    NUM_TASKS = 50000    # number of tasks
     COMP_POWER = 5        # computation power of cars
     COMP_POWER_STD = 1    # standard deviation
     BANDWIDTH = 10        # bandwidth of cars
@@ -62,8 +59,8 @@ def main():
     sample_dict = data_to_learn.partition_data(NUM_RSU)
 
     rsuList = data.rsuList(RSU_RANGE, NUM_RSU, sample_dict)
-    for each in rsuList:
-        print(len(each.sample.sample))
+    # for each in rsuList:
+    #     print(len(each.sample.sample))
     simulation = Simulation(FCD_FILE, vehicleDict, rsuList, NUM_TASKS)
     simulate(simulation)
 
