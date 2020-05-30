@@ -34,29 +34,32 @@ class Vehicle:
         if rsu:
             if self.rsu_assigned == None:
                 self.rsu_assigned = rsu
-            if self.rsu_assigned == rsu:
-                for _ in range(int(self.bandwidth)):
+                for _ in range(int(self.comp_power * 20)):
                     if rsu.tasks_unassigned:
                         task = rsu.tasks_unassigned.pop()
                         self.tasks_assigned.append(task)
-                        self.tasks_remaining.append(task)
                         rsu.tasks_assigned.add(task)
                     elif rsu.tasks_assigned:
                         task = rsu.tasks_assigned.pop()
                         self.tasks_assigned.append(task)
-                        self.tasks_remaining.append(task)
                         rsu.tasks_assigned.add(task)
                     else:
-                        return
+                        break
+            if self.rsu_assigned == rsu:
+                num_downloaded_tasks = len(self.tasks_remaining)
+                self.tasks_remaining.extend(self.tasks_assigned[num_downloaded_tasks:num_downloaded_tasks+int(self.bandwidth)])
+                if len(self.tasks_remaining) == len(self.tasks_assigned):
+                    self.tasks_assigned.append(0)
 
     def download_complete(self):
-        if len(self.tasks_assigned) < self.comp_power * 20:
+        if len(self.tasks_assigned) != int(self.comp_power * 20) + 1:
             return False
         else:
-            for task in self.tasks_assigned:
-                self.rsu_assigned.tasks_assigned.discard(task)
-                self.rsu_assigned.tasks_downloaded.add(task)
-                return True
+            if self.tasks_assigned[0] in self.rsu_assigned.tasks_assigned:
+                for task in self.tasks_assigned:
+                    self.rsu_assigned.tasks_assigned.discard(task)
+                    self.rsu_assigned.tasks_downloaded.add(task)
+            return True
 
     def compute(self):
         result = []
@@ -74,10 +77,7 @@ class Vehicle:
             rsu.received_results.append(self.computed_array.pop())
     
     def upload_complete(self):
-        if not self.computed_array:
-            return True
-        else:
-            return False
+        return not self.computed_array
 
     def in_range(self, rsuList):
         shortestDistance = 10000

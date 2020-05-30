@@ -29,7 +29,7 @@ def simulate(simulation):
                     if not vehi.upload_complete():
                         vehi.upload_to_rsu(simulation.rsuList)
                     else:
-                        simulation.num_tasks -= len(vehi.tasks_assigned)
+                        simulation.num_tasks -= (len(vehi.tasks_assigned)-1)
                         vehi.tasks_assigned = []
                         vehi.rsu_assigned = None
             # If all tasks are finished
@@ -44,11 +44,11 @@ def main():
     ROU_FILE = 'osm_boston_common/osm.passenger.trips.xml'
     NET_FILE = 'osm_boston_common/osm.net.xml'
     FCD_FILE = 'osm_boston_common/osm_fcd.xml'
-    NUM_TASKS = 50000    # number of tasks
+    NUM_TASKS = 10000    # number of tasks
     COMP_POWER = 5        # computation power of cars
     COMP_POWER_STD = 1    # standard deviation
-    BANDWIDTH = 10        # bandwidth of cars
-    BANDWIDTH_STD = 2     # standard deviation
+    BANDWIDTH = 5        # bandwidth of cars
+    BANDWIDTH_STD = 1     # standard deviation
     RSU_RANGE = 300       # range of RSU
     NUM_RSU = 2           # number of RSU
 
@@ -63,6 +63,7 @@ def main():
     #     print(len(each.sample.sample))
     simulation = Simulation(FCD_FILE, vehicleDict, rsuList, NUM_TASKS)
     simulate(simulation)
+    # print(rsuList[0].tasks_assigned)
 
 if __name__ == '__main__':
     main()
