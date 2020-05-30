@@ -1,6 +1,6 @@
 import numpy as np 
 import xml.etree.ElementTree as ET 
-from simulationItrClass import SUMO_Dataset, Simulation, Task_Set
+from simulationItrClass import SUMO_Dataset, Simulation, Task_Set, Vehicle
 
 def simulate(simulation):
     tree = ET.parse(simulation.FCD_file)
@@ -11,6 +11,9 @@ def simulate(simulation):
     for timestep in root:
         # For each vehicle on the map at the timestep
         for vehicle in timestep.findall('vehicle'):
+            if vehicle.attrib['id'] not in simulation.vehicleDict:
+                simulation.vehicleDict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'], 10, 2, 10, 2)
+
             vehi = simulation.vehicleDict[vehicle.attrib['id']]  # Get the vehicle object from vehicleDict
             # Set location and speed
             vehi.set_properties(float(vehicle.attrib['x']),
@@ -45,23 +48,26 @@ def main():
     ROU_FILE = 'osm_boston_common/osm.passenger.trips.xml'
     NET_FILE = 'osm_boston_common/osm.net.xml'
     FCD_FILE = 'osm_boston_common/osm_fcd.xml'
+    # ROU_FILE = ''
+    # NET_FILE = 'MonacoST/most.net.xml'
+    # FCD_FILE = 'MonacoST/most_fcd.xml'
     NUM_TASKS = 10000    # number of tasks
     COMP_POWER = 5        # computation power of cars
     COMP_POWER_STD = 1    # standard deviation
     BANDWIDTH = 5        # bandwidth of cars
     BANDWIDTH_STD = 1     # standard deviation
     RSU_RANGE = 300       # range of RSU
-    NUM_RSU = 2           # number of RSU
+    NUM_RSU = 50           # number of RSU
 
     data = SUMO_Dataset(ROU_FILE, NET_FILE)
-    vehicleDict = data.vehicleDict(COMP_POWER, COMP_POWER_STD, BANDWIDTH, BANDWIDTH_STD)
+    # vehicleDict = data.vehicleDict(COMP_POWER, COMP_POWER_STD, BANDWIDTH, BANDWIDTH_STD)
 
     data_to_learn = Task_Set(1, NUM_TASKS)
     sample_dict = data_to_learn.partition_data(NUM_RSU)
 
     rsuList = data.rsuList(RSU_RANGE, NUM_RSU, sample_dict)
 
-    simulation = Simulation(FCD_FILE, vehicleDict, rsuList, NUM_TASKS)
+    simulation = Simulation(FCD_FILE, {}, rsuList, NUM_TASKS)
     simulate(simulation)
     # print(rsuList[0].tasks_assigned)
 
