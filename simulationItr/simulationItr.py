@@ -1,5 +1,6 @@
 import numpy as np 
-import xml.etree.ElementTree as ET 
+import xml.etree.ElementTree as ET
+import yaml
 from simulationItrClass import SUMO_Dataset, Simulation, Task_Set, Vehicle
 
 def simulate(simulation):
@@ -45,19 +46,20 @@ def simulate(simulation):
 
 
 def main():
-    ROU_FILE = 'osm_boston_common/osm.passenger.trips.xml'
-    NET_FILE = 'osm_boston_common/osm.net.xml'
-    FCD_FILE = 'osm_boston_common/osm_fcd.xml'
-    # ROU_FILE = ''
-    # NET_FILE = 'MonacoST/most.net.xml'
-    # FCD_FILE = 'MonacoST/most_fcd.xml'
-    NUM_TASKS = 10000    # number of tasks
-    COMP_POWER = 5        # computation power of cars
-    COMP_POWER_STD = 1    # standard deviation
-    BANDWIDTH = 5        # bandwidth of cars
-    BANDWIDTH_STD = 1     # standard deviation
-    RSU_RANGE = 300       # range of RSU
-    NUM_RSU = 50           # number of RSU
+    file = open('config.yml', 'r')
+    cfg = yaml.load(file, Loader=yaml.FullLoader)
+
+    ROU_FILE = cfg['simulation']['ROU_FILE']
+    NET_FILE = cfg['simulation']['NET_FILE']
+    FCD_FILE = cfg['simulation']['FCD_FILE']
+    
+    NUM_TASKS = cfg['simulation']['num_tasks']    # number of tasks
+    COMP_POWER = cfg['simulation']['comp_power']        # computation power of cars
+    COMP_POWER_STD = cfg['simulation']['comp_power_std']    # standard deviation
+    BANDWIDTH = cfg['simulation']['bandwidth']        # bandwidth of cars
+    BANDWIDTH_STD = cfg['simulation']['bandwidth_std']     # standard deviation
+    RSU_RANGE = cfg['simulation']['rsu_range']       # range of RSU
+    NUM_RSU = cfg['simulation']['num_rsu']           # number of RSU
 
     data = SUMO_Dataset(ROU_FILE, NET_FILE)
     # vehicleDict = data.vehicleDict(COMP_POWER, COMP_POWER_STD, BANDWIDTH, BANDWIDTH_STD)

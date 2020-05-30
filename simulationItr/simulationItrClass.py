@@ -1,6 +1,12 @@
 import math
 import numpy as np
+import yaml
 import xml.etree.ElementTree as ET
+
+
+file = open('config.yml', 'r')
+cfg = yaml.load(file, Loader=yaml.FullLoader)
+
 
 class Vehicle:
     """
@@ -39,7 +45,7 @@ class Vehicle:
         if rsu:
             if self.rsu_assigned == None:
                 self.rsu_assigned = rsu
-                for _ in range(int(self.comp_power * 20)):
+                for _ in range(int(self.comp_power * cfg['vehicle']['tasks_per_comp_power'])):
                     if rsu.tasks_unassigned:
                         task = rsu.tasks_unassigned.pop()
                         self.tasks_assigned.append(task)
