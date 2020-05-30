@@ -29,6 +29,11 @@ class Vehicle:
         self.bandwidth = np.random.normal(bandwidth, bandwidth_std)
         self.computed_array = []
 
+    def set_properties(self, x, y, speed):
+        self.x = x
+        self.y = y
+        self.speed = speed
+
     def download_from_rsu(self, rsuList):
         rsu = self.in_range(rsuList)
         if rsu:
@@ -78,6 +83,10 @@ class Vehicle:
     
     def upload_complete(self):
         return not self.computed_array
+
+    def free_up(self):
+        self.tasks_assigned = []
+        self.rsu_assigned = None
 
     def in_range(self, rsuList):
         shortestDistance = 10000

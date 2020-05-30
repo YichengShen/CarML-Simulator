@@ -5,16 +5,18 @@ from simulationItrClass import SUMO_Dataset, Simulation, Task_Set
 def simulate(simulation):
     tree = ET.parse(simulation.FCD_file)
     root = tree.getroot()
-    totalTasks = simulation.num_tasks
+    total_tasks = simulation.num_tasks
 
     # For each time step (sec) in the FCD file  
     for timestep in root:
         # For each vehicle on the map at the timestep
         for vehicle in timestep.findall('vehicle'):
-            vehi = simulation.vehicleDict[vehicle.attrib['id']]
-            vehi.x = float(vehicle.attrib['x'])
-            vehi.y = float(vehicle.attrib['y'])
-            vehi.speed = float(vehicle.attrib['speed'])
+            vehi = simulation.vehicleDict[vehicle.attrib['id']]  # Get the vehicle object from vehicleDict
+            # Set location and speed
+            vehi.set_properties(float(vehicle.attrib['x']),
+                                float(vehicle.attrib['y']),
+                                float(vehicle.attrib['speed'])
+                                )
             # Download if not finished downloading
             if not vehi.download_complete():
                 vehi.download_from_rsu(simulation.rsuList)
@@ -29,12 +31,11 @@ def simulate(simulation):
                     if not vehi.upload_complete():
                         vehi.upload_to_rsu(simulation.rsuList)
                     else:
-                        simulation.num_tasks -= (len(vehi.tasks_assigned)-1)
-                        vehi.tasks_assigned = []
-                        vehi.rsu_assigned = None
+                        simulation.num_tasks -= (len(vehi.tasks_assigned)-1) # Update number of tasks left
+                        vehi.free_up()
             # If all tasks are finished
             if simulation.num_tasks <= 0:
-                print("\nAll {} tasks were completed in {} units of time.\n".format(totalTasks, timestep.attrib['time']))
+                print("\nAll {} tasks were completed in {} units of time.\n".format(total_tasks, timestep.attrib['time']))
                 return
     # If some tasks aren't finished after running through all the timestpes
     print("\nAll vehicles left the RSU ranges when {} tasks were left.\n".format(simulation.num_tasks))
@@ -59,8 +60,7 @@ def main():
     sample_dict = data_to_learn.partition_data(NUM_RSU)
 
     rsuList = data.rsuList(RSU_RANGE, NUM_RSU, sample_dict)
-    # for each in rsuList:
-    #     print(len(each.sample.sample))
+
     simulation = Simulation(FCD_FILE, vehicleDict, rsuList, NUM_TASKS)
     simulate(simulation)
     # print(rsuList[0].tasks_assigned)
