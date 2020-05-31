@@ -57,8 +57,8 @@ def main():
     NET_FILE = cfg['simulation']['NET_FILE']
     FCD_FILE = cfg['simulation']['FCD_FILE']
     
-    NUM_TASKS = cfg['simulation']['num_tasks']    # number of tasks
-    RSU_RANGE = cfg['simulation']['rsu_range']       # range of RSU
+    NUM_TASKS = cfg['simulation']['num_tasks']       # number of tasks
+    RSU_RANGE = cfg['comm_range']['v2rsu']           # range of RSU
     NUM_RSU = cfg['simulation']['num_rsu']           # number of RSU
 
     sumo_data = SUMO_Dataset(ROU_FILE, NET_FILE)
