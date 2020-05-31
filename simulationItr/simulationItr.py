@@ -1,12 +1,9 @@
 import numpy as np 
 import xml.etree.ElementTree as ET
 import yaml
-from simulationItrClass import SUMO_Dataset, Simulation, Task_Set, Vehicle
+from simulationItrClass import *
 
 def simulate(simulation):
-    file = open('config.yml', 'r')
-    cfg = yaml.load(file, Loader=yaml.FullLoader)
-
     tree = ET.parse(simulation.FCD_file)
     root = tree.getroot()
     total_tasks = simulation.num_tasks
@@ -53,9 +50,6 @@ def simulate(simulation):
 
 
 def main():
-    file = open('config.yml', 'r')
-    cfg = yaml.load(file, Loader=yaml.FullLoader)
-
     ROU_FILE = cfg['simulation']['ROU_FILE']
     NET_FILE = cfg['simulation']['NET_FILE']
     FCD_FILE = cfg['simulation']['FCD_FILE']
