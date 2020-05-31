@@ -4,6 +4,9 @@ import yaml
 from simulationItrClass import SUMO_Dataset, Simulation, Task_Set, Vehicle
 
 def simulate(simulation):
+    file = open('config.yml', 'r')
+    cfg = yaml.load(file, Loader=yaml.FullLoader)
+
     tree = ET.parse(simulation.FCD_file)
     root = tree.getroot()
     total_tasks = simulation.num_tasks
@@ -13,7 +16,11 @@ def simulate(simulation):
         # For each vehicle on the map at the timestep
         for vehicle in timestep.findall('vehicle'):
             if vehicle.attrib['id'] not in simulation.vehicleDict:
-                simulation.vehicleDict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'], 10, 2, 10, 2)
+                simulation.vehicleDict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'],
+                                                                       cfg['simulation']['comp_power'],
+                                                                       cfg['simulation']['comp_power_std'], 
+                                                                       cfg['simulation']['bandwidth'], 
+                                                                       cfg['simulation']['bandwidth_std'])
 
             vehi = simulation.vehicleDict[vehicle.attrib['id']]  # Get the vehicle object from vehicleDict
             # Set location and speed
@@ -54,10 +61,6 @@ def main():
     FCD_FILE = cfg['simulation']['FCD_FILE']
     
     NUM_TASKS = cfg['simulation']['num_tasks']    # number of tasks
-    COMP_POWER = cfg['simulation']['comp_power']        # computation power of cars
-    COMP_POWER_STD = cfg['simulation']['comp_power_std']    # standard deviation
-    BANDWIDTH = cfg['simulation']['bandwidth']        # bandwidth of cars
-    BANDWIDTH_STD = cfg['simulation']['bandwidth_std']     # standard deviation
     RSU_RANGE = cfg['simulation']['rsu_range']       # range of RSU
     NUM_RSU = cfg['simulation']['num_rsu']           # number of RSU
 
