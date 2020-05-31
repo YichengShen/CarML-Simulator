@@ -135,7 +135,13 @@ class RSU:
 
 
 class Task_Set:
-    """The dataset used to learn."""
+    """
+    The dataset used to learn.
+    Attributes:
+    - data_list_id
+    - num_tasks
+    - data_list
+    """
     def __init__(self, data_list_id, num_tasks):
         self.data_list_id = data_list_id
         self.num_tasks = num_tasks
@@ -156,6 +162,13 @@ class Task_Set:
 
 
 class RSU_Subtasks:
+    """
+    A partition (sample) of the big dataset. Different partitions are on different RSUs.
+    Attributes:
+    - sample_id
+    - parent_id
+    - sample
+    """
     def __init__(self, sample_id, parent_id, sample):
         self.sample_id = sample_id
         self.parent_id = parent_id
