@@ -36,6 +36,14 @@ def simulate(simulation):
                     else:
                         simulation.num_tasks -= (len(vehi.tasks_assigned)-1) # Update number of tasks left
                         vehi.free_up()
+            # If out of range of the assigned rsu
+            if vehi.out_of_range():
+                vehi.update_time_left_rsu()
+            else:
+                vehi.refresh_time_left_rsu()
+            # If time after leaving rsu > N
+            if vehi.time_left_rsu > cfg['timer']['time_remove_rsu_assigned']:
+                vehi.remove_tasks_and_rsu()
             # If all tasks are finished
             if simulation.num_tasks <= 0:
                 print("\nAll {} tasks were completed in {} units of time.\n".format(total_tasks, timestep.attrib['time']))

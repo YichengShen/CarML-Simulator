@@ -1,6 +1,9 @@
 vehicle:
   tasks_per_comp_power: 20
 
+timer:
+  time_remove_rsu_assigned: 20
+
 
 simulation:
   ROU_FILE: 'osm_boston_common/osm.passenger.trips.xml'
@@ -10,10 +13,10 @@ simulation:
   # NET_FILE: 'MonacoST/most.net.xml'
   # FCD_FILE: 'MonacoST/most_fcd.xml'
 
-  num_tasks: 4000    # number of tasks
+  num_tasks: 10000    # number of tasks
   comp_power: 5        # computation power of cars
   comp_power_std: 1    # standard deviation
   bandwidth: 5        # bandwidth of cars
   bandwidth_std: 1     # standard deviation
   rsu_range: 300       # range of RSU
-  num_rsu: 2           # number of RSU
+  num_rsu: 10           # number of RSU

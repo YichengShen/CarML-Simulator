@@ -22,6 +22,7 @@ class Vehicle:
     - rsu_assigned
     - bandwidth
     - computed_array
+    - time_left_rsu
     """
     def __init__(self, car_id, comp_power, comp_power_std, bandwidth, bandwidth_std):
         self.car_id = car_id
@@ -34,6 +35,7 @@ class Vehicle:
         self.rsu_assigned = None
         self.bandwidth = np.random.normal(bandwidth, bandwidth_std)
         self.computed_array = []
+        self.time_left_rsu = 0
 
     def set_properties(self, x, y, speed):
         self.x = x
@@ -103,6 +105,27 @@ class Vehicle:
                 shortest_distance = distance
                 closest_rsu = rsu
         return closest_rsu
+
+    def out_of_range(self):
+        if self.rsu_assigned != None:
+            distance = math.sqrt((self.rsu_assigned.rsu_x - self.x) ** 2 + (self.rsu_assigned.rsu_y - self.y) ** 2)
+            if distance > self.rsu_assigned.rsu_range:
+                return True
+        return False
+
+    def update_time_left_rsu(self):
+        self.time_left_rsu += 1
+    
+    def refresh_time_left_rsu(self):
+        self.time_left_rsu = 0
+
+    def remove_tasks_and_rsu(self):
+        self.tasks_assigned = []
+        self.tasks_remaining = []
+        self.rsu_assigned = None
+        self.computed_array = [] # ?
+        self.time_left_rsu = 0
+
 
 
 class RSU:
