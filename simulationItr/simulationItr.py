@@ -1,6 +1,4 @@
-import numpy as np 
 import xml.etree.ElementTree as ET
-import yaml
 from simulationItrClass import *
 
 def simulate(simulation):
@@ -14,10 +12,10 @@ def simulate(simulation):
         for vehicle in timestep.findall('vehicle'):
             if vehicle.attrib['id'] not in simulation.vehicle_dict:
                 simulation.vehicle_dict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'],
-                                                                       cfg['simulation']['comp_power'],
-                                                                       cfg['simulation']['comp_power_std'], 
-                                                                       cfg['simulation']['bandwidth'], 
-                                                                       cfg['simulation']['bandwidth_std'])
+                                                                        cfg['simulation']['comp_power'],
+                                                                        cfg['simulation']['comp_power_std'], 
+                                                                        cfg['simulation']['bandwidth'],
+                                                                        cfg['simulation']['bandwidth_std'])
 
             vehi = simulation.vehicle_dict[vehicle.attrib['id']]  # Get the vehicle object from vehicle_dict
             # Set location and speed
