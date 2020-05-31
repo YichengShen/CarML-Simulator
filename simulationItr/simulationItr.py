@@ -10,14 +10,11 @@ def simulate(simulation):
     for timestep in root:
         # For each vehicle on the map at the timestep
         for vehicle in timestep.findall('vehicle'):
+            # If vehicle not yet stored in vehicle_dict
             if vehicle.attrib['id'] not in simulation.vehicle_dict:
-                simulation.vehicle_dict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'],
-                                                                        cfg['simulation']['comp_power'],
-                                                                        cfg['simulation']['comp_power_std'], 
-                                                                        cfg['simulation']['bandwidth'],
-                                                                        cfg['simulation']['bandwidth_std'])
-
-            vehi = simulation.vehicle_dict[vehicle.attrib['id']]  # Get the vehicle object from vehicle_dict
+                simulation.add_into_vehicle_dict(vehicle)
+            # Get the vehicle object from vehicle_dict
+            vehi = simulation.vehicle_dict[vehicle.attrib['id']]  
             # Set location and speed
             vehi.set_properties(float(vehicle.attrib['x']),
                                 float(vehicle.attrib['y']),

@@ -214,3 +214,10 @@ class Simulation:
         self.vehicle_dict = vehicle_dict
         self.rsu_list = rsu_list
         self.num_tasks = num_tasks
+
+    def add_into_vehicle_dict(self, vehicle):
+        self.vehicle_dict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'],
+                                                          cfg['simulation']['comp_power'],
+                                                          cfg['simulation']['comp_power_std'], 
+                                                          cfg['simulation']['bandwidth'],
+                                                          cfg['simulation']['bandwidth_std'])
