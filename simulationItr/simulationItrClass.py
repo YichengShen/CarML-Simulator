@@ -82,8 +82,8 @@ class Vehicle:
     def compute_complete(self):
         return not self.tasks_remaining 
 
-    def upload_to_rsu(self, rsuList):
-        rsu = self.in_range(rsuList)
+    def upload_to_rsu(self, rsu_list):
+        rsu = self.in_range(rsu_list)
         if rsu:
             rsu.received_results.append(self.computed_array.pop())
     
@@ -94,20 +94,15 @@ class Vehicle:
         self.tasks_assigned = []
         self.rsu_assigned = None
 
-    def in_range(self, rsuList):
-        shortestDistance = 10000
-        closestRsu = None
-        for rsu in rsuList:
+    def in_range(self, rsu_list):
+        shortest_distance = 99999999 # placeholder (a random large number)
+        closest_rsu = None
+        for rsu in rsu_list:
             distance = math.sqrt((rsu.rsu_x - self.x) ** 2 + (rsu.rsu_y - self.y) ** 2)
-            if distance <= rsu.rsu_range and distance < shortestDistance:
-                shortestDistance = distance
-                closestRsu = rsu
-        return closestRsu
-    
-    def has_data(self, rsu, datum):
-        if datum in rsu.sample.sample:
-            return True
-
+            if distance <= rsu.rsu_range and distance < shortest_distance:
+                shortest_distance = distance
+                closest_rsu = rsu
+        return closest_rsu
 
 
 class RSU:
@@ -148,7 +143,7 @@ class Task_Set:
         self.data_list = [datum for datum in range(num_tasks)]
     
     def partition_data(self, num_RSU):
-        sampleDict = {}
+        sample_dict = {}
         sample_size = int(self.num_tasks / num_RSU)
         sample_id = 0
         for i in range(0, self.num_tasks - 1, sample_size):
@@ -156,9 +151,9 @@ class Task_Set:
                 sample = set(self.data_list[i:])
             else:
                 sample = set(self.data_list[i:i + sample_size])
-            sampleDict[sample_id] = RSU_Subtasks(sample_id, self.data_list_id, sample)
+            sample_dict[sample_id] = RSU_Subtasks(sample_id, self.data_list_id, sample)
             sample_id += 1
-        return sampleDict
+        return sample_dict
 
 
 class RSU_Subtasks:
@@ -188,21 +183,21 @@ class SUMO_Dataset:
     def vehicleDict(self, comp_power, comp_power_std, bandwidth, bandwidth_std):
         tree = ET.parse(self.ROU_file)
         root = tree.getroot()
-        vehicleDict = {}
+        vehicle_dict = {}
         for vehicle in root.findall('trip'):
-            vehicleDict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'], comp_power, comp_power_std, bandwidth, bandwidth_std)
-        return vehicleDict
+            vehicle_dict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'], comp_power, comp_power_std, bandwidth, bandwidth_std)
+        return vehicle_dict
 
     def rsuList(self, rsu_range, rsu_nums, sample_dict):
         tree = ET.parse(self.NET_file)
         root = tree.getroot()
-        RSUList = []
-        junctionList = np.random.choice(root.findall('junction'), rsu_nums, replace=False)
+        rsu_list = []
+        junction_list = np.random.choice(root.findall('junction'), rsu_nums, replace=False)
         for i in range(rsu_nums):
             id = 'rsu' + str(i)
             sample = sample_dict[i]
-            RSUList.append(RSU(id, float(junctionList[i].attrib['x']), float(junctionList[i].attrib['y']), rsu_range, sample))
-        return RSUList
+            rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range, sample))
+        return rsu_list
 
 
 class Simulation:
@@ -210,12 +205,12 @@ class Simulation:
     Simulation object for Car ML Simulator.
     Attributes:
     - FCD_file
-    - vehicleDict
-    - rsuList
+    - vehicle_dict
+    - rsu_list
     - num_tasks
     """
-    def __init__(self, FCD_file, vehicleDict: dict, rsuList: list, num_tasks):
+    def __init__(self, FCD_file, vehicle_dict: dict, rsu_list: list, num_tasks):
         self.FCD_file = FCD_file
-        self.vehicleDict = vehicleDict
-        self.rsuList = rsuList
+        self.vehicle_dict = vehicle_dict
+        self.rsu_list = rsu_list
         self.num_tasks = num_tasks

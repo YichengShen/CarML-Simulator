@@ -12,14 +12,14 @@ def simulate(simulation):
     for timestep in root:
         # For each vehicle on the map at the timestep
         for vehicle in timestep.findall('vehicle'):
-            if vehicle.attrib['id'] not in simulation.vehicleDict:
-                simulation.vehicleDict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'],
+            if vehicle.attrib['id'] not in simulation.vehicle_dict:
+                simulation.vehicle_dict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'],
                                                                        cfg['simulation']['comp_power'],
                                                                        cfg['simulation']['comp_power_std'], 
                                                                        cfg['simulation']['bandwidth'], 
                                                                        cfg['simulation']['bandwidth_std'])
 
-            vehi = simulation.vehicleDict[vehicle.attrib['id']]  # Get the vehicle object from vehicleDict
+            vehi = simulation.vehicle_dict[vehicle.attrib['id']]  # Get the vehicle object from vehicle_dict
             # Set location and speed
             vehi.set_properties(float(vehicle.attrib['x']),
                                 float(vehicle.attrib['y']),
@@ -27,7 +27,7 @@ def simulate(simulation):
                                 )
             # Download if not finished downloading
             if not vehi.download_complete():
-                vehi.download_from_rsu(simulation.rsuList)
+                vehi.download_from_rsu(simulation.rsu_list)
             # If finished downloading
             else:
                 # Compute when there are still tasks left
@@ -37,7 +37,7 @@ def simulate(simulation):
                 else:
                     # Upload if not finished uploading
                     if not vehi.upload_complete():
-                        vehi.upload_to_rsu(simulation.rsuList)
+                        vehi.upload_to_rsu(simulation.rsu_list)
                     else:
                         simulation.num_tasks -= (len(vehi.tasks_assigned)-1) # Update number of tasks left
                         vehi.free_up()
@@ -58,15 +58,16 @@ def main():
     RSU_RANGE = cfg['simulation']['rsu_range']       # range of RSU
     NUM_RSU = cfg['simulation']['num_rsu']           # number of RSU
 
-    data = SUMO_Dataset(ROU_FILE, NET_FILE)
-    # vehicleDict = data.vehicleDict(COMP_POWER, COMP_POWER_STD, BANDWIDTH, BANDWIDTH_STD)
+    sumo_data = SUMO_Dataset(ROU_FILE, NET_FILE)
+    # vehicle_dict = data.vehicleDict(COMP_POWER, COMP_POWER_STD, BANDWIDTH, BANDWIDTH_STD)
+    vehicle_dict = {}
 
     data_to_learn = Task_Set(1, NUM_TASKS)
     sample_dict = data_to_learn.partition_data(NUM_RSU)
 
-    rsuList = data.rsuList(RSU_RANGE, NUM_RSU, sample_dict)
+    rsu_list = sumo_data.rsuList(RSU_RANGE, NUM_RSU, sample_dict)
 
-    simulation = Simulation(FCD_FILE, {}, rsuList, NUM_TASKS)
+    simulation = Simulation(FCD_FILE, vehicle_dict, rsu_list, NUM_TASKS)
     simulate(simulation)
     # print(rsuList[0].tasks_assigned)
 
