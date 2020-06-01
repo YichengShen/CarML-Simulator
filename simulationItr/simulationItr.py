@@ -18,32 +18,37 @@ def simulate(simulation):
             # Set location and speed
             vehi.set_properties(float(vehicle.attrib['x']),
                                 float(vehicle.attrib['y']),
-                                float(vehicle.attrib['speed'])
-                                )
+                                float(vehicle.attrib['speed']))
             # Download if not finished downloading
             if not vehi.download_complete():
                 vehi.download_from_rsu(simulation.rsu_list)
+                # If out of range of the assigned rsu
+                if vehi.out_of_range():
+                    vehi.update_time_left_rsu()
+                else:
+                    vehi.refresh_time_left_rsu()
+                # If time after leaving rsu > N
+                if vehi.time_left_rsu > cfg['timer']['time_remove_rsu_assigned']:
+                    vehi.remove_tasks_and_rsu()
             # If finished downloading
             else:
                 # Compute when there are still tasks left
                 if not vehi.compute_complete():
                     vehi.compute()
+                    # Transfer data if vehicle is about to go out of bounds
+                    if vehi.out_of_bounds(root, timestep):
+                        vehi.transfer_data(simulation, timestep)
                 # If finished computing
                 else:
+                    # Transfer data if vehicle is about to go out of bounds
+                    if vehi.out_of_bounds(root, timestep):
+                        vehi.transfer_data(simulation, timestep)
                     # Upload if not finished uploading
                     if not vehi.upload_complete():
                         vehi.upload_to_rsu(simulation.rsu_list)
                     else:
                         simulation.num_tasks -= (len(vehi.tasks_assigned)-1) # Update number of tasks left
                         vehi.free_up()
-            # If out of range of the assigned rsu
-            if vehi.out_of_range():
-                vehi.update_time_left_rsu()
-            else:
-                vehi.refresh_time_left_rsu()
-            # If time after leaving rsu > N
-            if vehi.time_left_rsu > cfg['timer']['time_remove_rsu_assigned']:
-                vehi.remove_tasks_and_rsu()
             # If all tasks are finished
             if simulation.num_tasks <= 0:
                 print("\nAll {} tasks were completed in {} units of time.\n".format(total_tasks, timestep.attrib['time']))
@@ -72,7 +77,6 @@ def main():
 
     simulation = Simulation(FCD_FILE, vehicle_dict, rsu_list, NUM_TASKS)
     simulate(simulation)
-    # print(rsuList[0].tasks_assigned)
 
 if __name__ == '__main__':
     main()

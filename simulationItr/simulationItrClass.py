@@ -43,8 +43,8 @@ class Vehicle:
         self.speed = speed
 
     def download_from_rsu(self, rsuList):
-        rsu = self.in_range(rsuList)
-        if rsu:
+        rsu = self.in_range_rsu(rsuList)
+        if rsu is not None:
             if self.rsu_assigned == None:
                 self.rsu_assigned = rsu
                 for _ in range(int(self.comp_power * cfg['vehicle']['tasks_per_comp_power'])):
@@ -61,8 +61,8 @@ class Vehicle:
             if self.rsu_assigned == rsu:
                 num_downloaded_tasks = len(self.tasks_remaining)
                 self.tasks_remaining.extend(self.tasks_assigned[num_downloaded_tasks:num_downloaded_tasks+int(self.bandwidth)])
-                if len(self.tasks_remaining) == len(self.tasks_assigned):
-                    self.tasks_assigned.append(0)
+                if len(self.tasks_remaining) == len(self.tasks_assigned) and len(self.tasks_assigned) > 0:
+                    self.tasks_assigned.append(-1)
 
     def download_complete(self):
         if len(self.tasks_assigned) != int(self.comp_power * 20) + 1:
@@ -85,18 +85,35 @@ class Vehicle:
         return not self.tasks_remaining 
 
     def upload_to_rsu(self, rsu_list):
-        rsu = self.in_range(rsu_list)
-        if rsu:
+        rsu = self.in_range_rsu(rsu_list)
+        if rsu is not None:
             rsu.received_results.append(self.computed_array.pop())
     
     def upload_complete(self):
         return not self.computed_array
 
+    def transfer_data(self, simulation, timestep):
+        vehicles_in_range = self.in_range_vehicle(timestep)
+        for vehicle in vehicles_in_range:
+            if vehicle.attrib['id'] not in simulation.vehicle_dict:
+                simulation.add_into_vehicle_dict(vehicle)
+                vehi = simulation.vehicle_dict[vehicle.attrib['id']]
+                vehi.tasks_assigned = self.tasks_assigned
+                vehi.tasks_remaining = self.tasks_remaining
+                vehi.computed_array = self.computed_array
+                break
+            elif not simulation.vehicle_dict[vehicle.attrib['id']].tasks_assigned:
+                vehi = simulation.vehicle_dict[vehicle.attrib['id']]
+                vehi.tasks_assigned = self.tasks_assigned
+                vehi.tasks_remaining = self.tasks_remaining
+                vehi.computed_array = self.computed_array
+                break
+
     def free_up(self):
         self.tasks_assigned = []
         self.rsu_assigned = None
 
-    def in_range(self, rsu_list):
+    def in_range_rsu(self, rsu_list):
         shortest_distance = 99999999 # placeholder (a random large number)
         closest_rsu = None
         for rsu in rsu_list:
@@ -106,12 +123,29 @@ class Vehicle:
                 closest_rsu = rsu
         return closest_rsu
 
+    def in_range_vehicle(self, timestep):
+        vehicles_in_range = []
+        for vehicle in timestep.findall('vehicle'):
+            distance = math.sqrt((float(vehicle.attrib['x']) - self.x) ** 2 + (float(vehicle.attrib['y']) - self.y) ** 2)
+            if distance <= cfg['comm_range']['v2v']:
+                vehicles_in_range.append(vehicle)
+        return vehicles_in_range
+
     def out_of_range(self):
         if self.rsu_assigned != None:
             distance = math.sqrt((self.rsu_assigned.rsu_x - self.x) ** 2 + (self.rsu_assigned.rsu_y - self.y) ** 2)
             if distance > self.rsu_assigned.rsu_range:
                 return True
         return False
+
+    def out_of_bounds(self, root, timestep):
+        current_timestep = float(timestep.attrib['time'])
+        next_timestep = root.find('timestep[@time="{:.2f}"]'.format(current_timestep+1))
+        if next_timestep == None:
+            return False
+        else:
+            id_set = set(map(lambda vehicle: vehicle.attrib['id'], next_timestep.findall('vehicle')))
+            return not self.car_id in id_set
 
     def update_time_left_rsu(self):
         self.time_left_rsu += 1
