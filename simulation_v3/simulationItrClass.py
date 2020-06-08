@@ -2,6 +2,7 @@ import math
 import numpy as np
 import yaml
 import xml.etree.ElementTree as ET
+from sklearn.linear_model import LogisticRegression
 
 
 file = open('config.yml', 'r')
@@ -17,12 +18,13 @@ class Vehicle:
     - y
     - speed
     - comp_power
-    - tasks_assigned
-    - tasks_remaining
-    - rsu_assigned
     - bandwidth
-    - computed_array
-    - time_left_rsu
+    - lock
+    - max_data_rows
+    - data_tuples_downloaded
+    - parent_rsu
+    - coef
+    - uploaded
     """
     def __init__(self, car_id, comp_power, comp_power_std, bandwidth, bandwidth_std):
         self.car_id = car_id
@@ -31,25 +33,17 @@ class Vehicle:
         self.speed = 0
         self.comp_power = np.random.normal(comp_power, comp_power_std)
         self.bandwidth = np.random.normal(bandwidth, bandwidth_std)
-        self.max_data_rows = 10
-        self.data_downloaded = []
-        self.target_downloaded = []
+        self.lock = 0
+        self.max_data_rows = cfg['vehicle']['max_data_rows']
+        self.data_tuples_downloaded = []
         self.parent_rsu = []
-        self.num_data_computed = 0
+        self.coef = []
+        self.uploaded = False
 
     def set_properties(self, x, y, speed):
         self.x = x
         self.y = y
         self.speed = speed
-
-    # def find_available_rsu_with_data(self, rsu_list):
-    #     rsu_available = []
-    #     for rsu in rsu_list:
-    #         distance = math.sqrt((rsu.rsu_x - self.x) ** 2 + (rsu.rsu_y - self.y) ** 2)
-    #         if distance <= rsu.rsu_range:
-    #             for each_id in rsu.id_data:
-    #                 rsu_available.append(rsu)
-    #     return rsu_available
 
     def find_rsu_in_range(self, rsu_list):
         rsu_in_range = []
@@ -61,48 +55,41 @@ class Vehicle:
 
     def download_from_rsu(self, rsu_list):
         rsu_in_range = self.find_rsu_in_range(rsu_list)
-        num_to_download = self.max_data_rows - len(self.data_downloaded)
+        num_to_download = self.max_data_rows - len(self.data_tuples_downloaded)
         if num_to_download > 0:
             i = min(num_to_download, int(self.bandwidth))
-            j = i
             for rsu in rsu_in_range:
-                if len(rsu.data) > 0:
-                    for data in rsu.data:
-                        if i > 0:
-                            self.data_downloaded.append(data)
-                            rsu.data_downloaded.append(data)
-                            rsu.data = np.delete(rsu.data, data, 0)
-                            i -= 1
-                    for target in rsu.target:
-                        if j > 0:
-                            self.target_downloaded.append(target)
-                            rsu.target_downloaded.append(target)
-                            rsu.target = np.delete(rsu.target, [target], 0)
-                            j -= 1
-        
-
-               
-
-    # def download_from_rsu(self, rsu_list):
-    #     rsu_available = self.find_available_rsu_with_data(rsu_list)
-    #     if rsu_available:
-    #         for idx in range(int(self.bandwidth)):
-    #             if len(self.data_id_downloaded) < int(self.comp_power) * cfg['vehicle']['tasks_per_comp_power']:
-    #                 if idx < len(rsu_available): # to prevent index out of range
-    #                     id_data_row = rsu_available[idx].id_data.pop()
-    #                     rsu_available[idx].id_data_downloaded.add(id_data_row)
-    #                     self.data_id_downloaded.append((id_data_row, rsu_available[idx]))
-    #             else:
-    #                 break
-    
+                if len(rsu.data_tuples) > 0:
+                    if i > 0:
+                        if len(rsu.data_tuples) >= i:
+                            self.data_tuples_downloaded.extend(rsu.data_tuples[:i])
+                            rsu.data_tuples_downloaded.extend(rsu.data_tuples[:i])
+                            rsu.data_tuples = rsu.data_tuples[i:]
+                            return
+                        else:
+                            self.data_tuples_downloaded.extend(rsu.data_tuples)
+                            rsu.data_tuples_downloaded.extend(rsu.data_tuples)
+                            i -= len(rsu.data_tuples)
+                            rsu.data_tuples = []
+                    
     def download_completed(self):
-        return len(self.data_id_downloaded) >= int(self.comp_power) * cfg['vehicle']['tasks_per_comp_power'] 
+        return self.max_data_rows <= len(self.data_tuples_downloaded)
 
     def compute(self):
-        self.num_data_computed += int(self.comp_power)
+        X_train = np.array([data_tuple[0] for data_tuple in self.data_tuples_downloaded])
+        Y_train = np.array([data_tuple[1] for data_tuple in self.data_tuples_downloaded])
+        
+        classifier = LogisticRegression(random_state = 0)
+        classifier.fit(X_train, Y_train)
+        coef = classifier.coef_
+        # Y_pred = classifier.predict(X_train)
+        self.coef = coef
+        # Timer
+        lock_time = int(len(self.data_tuples_downloaded) / self.comp_power) - 1
+        self.lock += lock_time
             
     def compute_completed(self):
-        return self.num_data_computed >= len(self.data_id_downloaded)
+        return self.coef != []
 
     def upload(self, rsu_list, cloud_server):
         in_rsu_range = False
@@ -111,21 +98,34 @@ class Vehicle:
             if distance <= rsu.rsu_range:
                 in_rsu_range = True
                 break
+        cloud_server.results.append(self.coef)
+        # Calculate upload time depending on uploading to RSU or via 4G
         if in_rsu_range:
-            upload_speed = int(self.bandwidth)
+            upload_time = int(len(self.coef) / self.bandwidth)
         else:
-            upload_speed = cfg['comm_speed']['speed_4g']
-        for _ in range(upload_speed):
-            tuple_result = self.data_id_downloaded.pop()
-            id_result = tuple_result[0]
-            cloud_server.data_id_list_finished.append(id_result)
-
+            upload_time = int(len(self.coef) / cfg['comm_speed']['speed_4g'])
+        if upload_time == 0:
+            upload_time = 1
+        # Timer
+        lock_time = upload_time - 1
+        self.lock += lock_time
+        self.uploaded = True
+            
     def upload_completed(self):
-        return len(self.data_id_downloaded) == 0
+        return self.uploaded
 
     def free_up(self):
-        self.data_id_downloaded = []
-        self.num_data_computed = 0
+        self.data_tuples_downloaded = []
+        self.parent_rsu = []
+        self.coef = []
+        self.uploaded = False
+
+    def is_not_locked(self):
+        return self.lock == 0
+
+    def update_lock(self):
+        if self.lock > 0:
+            self.lock -= 1
 
     # def transfer_data(self, simulation, timestep):
     #     vehicles_in_range = self.in_range_vehicle(timestep)
@@ -169,21 +169,21 @@ class Vehicle:
     #             return True
     #     return False
 
-    def out_of_bounds(self, root, timestep):
-        current_timestep = float(timestep.attrib['time'])
-        next_timestep = root.find('timestep[@time="{:.2f}"]'.format(current_timestep+1))
-        if next_timestep == None:
-            return False
-        else:
-            id_set = set(map(lambda vehicle: vehicle.attrib['id'], next_timestep.findall('vehicle')))
-            return not self.car_id in id_set
+    # def out_of_bounds(self, root, timestep):
+    #     current_timestep = float(timestep.attrib['time'])
+    #     next_timestep = root.find('timestep[@time="{:.2f}"]'.format(current_timestep+1))
+    #     if next_timestep == None:
+    #         return False
+    #     else:
+    #         id_set = set(map(lambda vehicle: vehicle.attrib['id'], next_timestep.findall('vehicle')))
+    #         return not self.car_id in id_set
 
-    def unlock_downloaded_data(self):
-        for each_tuple in self.data_id_downloaded:
-            rsu = each_tuple[1]
-            id_data_row = each_tuple[0]
-            rsu.id_data.append(id_data_row)
-            rsu.id_data_downloaded.remove(id_data_row)
+    # def unlock_downloaded_data(self):
+    #     for each_tuple in self.data_id_downloaded:
+    #         rsu = each_tuple[1]
+    #         id_data_row = each_tuple[0]
+    #         rsu.id_data.append(id_data_row)
+    #         rsu.id_data_downloaded.remove(id_data_row)
 
 
 class RSU:
@@ -194,31 +194,30 @@ class RSU:
     - rsu_x
     - rsu_y
     - rsu_range
-    - tasks_unassigned
-    - tasks_assigned
-    - tasks_downloaded
-    - received_results
+    - data_tuples
+    - data_tuples_downloaded
     """
     def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range):
         self.rsu_id = rsu_id
         self.rsu_x = rsu_x
         self.rsu_y = rsu_y
         self.rsu_range = rsu_range
-        self.data = [] 
-        self.target = []
-        self.data_downloaded = []
-        self.target_downloaded = []
+        self.data_tuples = [] 
+        self.data_tuples_downloaded = []
 
 
 class Cloud_Server:
     """
     Cloud Server object for Car ML Simulator.
     Attributes:
+    - dataset
+    - rsu_list
+    - results
     """
     def __init__(self, dataset, rsu_list):
         self.dataset = dataset
         self.rsu_list = rsu_list
-        # self.data_id_list_finished = []
+        self.results = []
         
 
     def distribute_to_rsu(self):
@@ -228,27 +227,31 @@ class Cloud_Server:
         num_rsu = len(self.rsu_list)
         overlap_rate = 0.03 / num_rsu # actual overlap rate can be slightly lower than 0.03 due to rounding
         
-        minibatch_size = int(num_data_rows / num_rsu)
-        minibatch_size_overlap = int(num_data_rows / num_rsu + overlap_rate * num_data_rows)
+        rsu_batch_size = int(num_data_rows / num_rsu)
+        rsu_batch_size_overlap = int(num_data_rows / num_rsu + overlap_rate * num_data_rows)
         
+        tuple_list = self.dataset.data_tuples()
+
         idx = 0
         for rsu in self.rsu_list:
-            if idx + minibatch_size_overlap <= num_data_rows:
-                rsu.data = self.dataset.data[idx:idx + minibatch_size_overlap, :]
-                rsu.target = self.dataset.target[idx:idx + minibatch_size_overlap]
+            if idx + rsu_batch_size_overlap <= num_data_rows:
+                rsu.data_tuples = tuple_list[idx:idx + rsu_batch_size_overlap]
             # If reached the end, overlap from the beginning
             else:
-                diff = idx + minibatch_size_overlap - num_data_rows
-                rsu.data = np.vstack((self.dataset.data[idx:, :], self.dataset.data[:diff, :]))
+                diff = idx + rsu_batch_size_overlap - num_data_rows
+                rsu.data_tuples = tuple_list[idx:] + tuple_list[:diff]
                 rsu.target = np.concatenate((self.dataset.target[idx:], self.dataset.target[:diff]))
-            idx += minibatch_size
+            idx += rsu_batch_size
 
 
 class Training_Dataset:
     """
     The dataset used to learn.
     Attributes:
-
+    - dataset_id
+    - data
+    - target
+    - num_tasks
     """
     def __init__(self, dataset_id, X, y):
         self.dataset_id = dataset_id
@@ -256,25 +259,12 @@ class Training_Dataset:
         self.target = y
         self.num_tasks = len(self.data)
 
-    # def data_dict(self):
-    #     data_dictionary = {}
-    #     for idx in range(self.num_tasks):
-    #         data_dictionary[idx] = (self.data[idx], self.target[idx])
-    #     return data_dictionary
+    def data_tuples(self):
+        tuple_list = []
+        for idx in range(len(self.data)):
+            tuple_list.append((self.data[idx], self.target[idx]))
+        return tuple_list
 
-
-# class Data_Minibatch:
-#     """
-#     A partition (sample) of the big dataset. Different partitions are on different RSUs.
-#     Attributes:
-#     - sample_id
-#     - parent_id
-#     - sample
-#     """
-#     def __init__(self, sample_id, parent_id, sample):
-#         self.sample_id = sample_id
-#         self.parent_id = parent_id
-#         self.sample = sample
 
 class SUMO_Dataset:
     """
@@ -313,7 +303,7 @@ class Simulation:
     - FCD_file
     - vehicle_dict
     - rsu_list
-    - num_tasks
+    - dataset
     """
     def __init__(self, FCD_file, vehicle_dict: dict, rsu_list: list, dataset):
         self.FCD_file = FCD_file
@@ -321,7 +311,6 @@ class Simulation:
         self.rsu_list = rsu_list
         self.dataset = dataset
        
-
     def add_into_vehicle_dict(self, vehicle):
         self.vehicle_dict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'],
                                                           cfg['simulation']['comp_power'],

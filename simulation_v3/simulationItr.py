@@ -9,11 +9,6 @@ def simulate(simulation):
     cloud_server = Cloud_Server(simulation.dataset, simulation.rsu_list)
     cloud_server.distribute_to_rsu()
 
-    for rsu in simulation.rsu_list:
-        print("# data on", rsu, len(rsu.data))
-        print("# target on", rsu, len(rsu.target))
-        print()
-
     tree = ET.parse(simulation.FCD_file)
     root = tree.getroot()
     total_num_data = simulation.dataset.num_tasks
@@ -32,39 +27,32 @@ def simulate(simulation):
                                 float(vehicle.attrib['y']),
                                 float(vehicle.attrib['speed']))
 
-            vehi.download_from_rsu(simulation.rsu_list)
-
-    for rsu in simulation.rsu_list:
-        print("# downloaded data on", rsu, len(rsu.data_downloaded))
-        print("# downloaded target on", rsu, len(rsu.target_downloaded))
-        print()
-
-
-
     #         # Tell RSU to allow other vehicles to download its tasks if vehicle is about to go out of bounds
     #         if vehi.out_of_bounds(root, timestep):
     #             vehi.unlock_downloaded_data()
 
             # Download if not finished downloading
-            # if not vehi.download_completed():
-            #     vehi.download_from_rsu(simulation.rsu_list)
-    #         # If finished downloading
-    #         else:
-    #             # Compute when there are still tasks left
-    #             if not vehi.compute_completed():
-    #                 vehi.compute()
-    #             # If finished compute
-    #             else:
-    #                 # Upload if not finished uploading
-    #                 if not vehi.upload_completed():
-    #                     vehi.upload(simulation.rsu_list, cloud_server)
-    #                 # If finished upload
-    #                 else:
-    #                     vehi.free_up()
+            if not vehi.download_completed():
+                vehi.download_from_rsu(simulation.rsu_list)
+            # If finished downloading
+            else:
+                # Compute when there are still tasks left
+                if not vehi.compute_completed():
+                    if vehi.is_not_locked():
+                        vehi.compute()
+                # If finished compute
+                else:
+                    # Upload if not finished uploading
+                    if not vehi.upload_completed():
+                        if vehi.is_not_locked():
+                            vehi.upload(simulation.rsu_list, cloud_server)
+                    # If finished upload
+                    else:
+                        vehi.free_up()
+            # If locked, lock -1 in every time step
+            vehi.update_lock()
 
-    # print(total_num_data - len(list(set(cloud_server.data_id_list_finished))))
-
-
+    return cloud_server.results
    
     #                 # Transfer data if vehicle is about to go out of bounds
     #                 if vehi.out_of_bounds(root, timestep):
@@ -101,7 +89,7 @@ def main():
 
     # Load dataset from sklearn
     data_breast_cancer = load_breast_cancer()
-    X = data_breast_cancer.data
+    X = data_breast_cancer.data[:,:6]
     y = data_breast_cancer.target
 
     dataset_to_learn = Training_Dataset(1, X, y)
@@ -109,7 +97,15 @@ def main():
     rsu_list = sumo_data.rsuList(RSU_RANGE, NUM_RSU)
 
     simulation = Simulation(FCD_FILE, vehicle_dict, rsu_list, dataset_to_learn)
-    simulate(simulation)
+    results = simulate(simulation)
+
+    # Compare results
+    classifier = LogisticRegression(random_state = 0)
+    classifier.fit(X[:100,:], y[:100])
+    coef = classifier.coef_
+
+    print(coef)
+    print(np.mean(results, axis=0))
 
 if __name__ == '__main__':
     main()
