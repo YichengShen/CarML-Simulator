@@ -42,13 +42,13 @@ def simulate(simulation):
                         vehi.compute()
                 # If finished compute
                 else:
-                    # Upload if not finished uploading
-                    if not vehi.upload_completed():
-                        if vehi.is_not_locked():
+                    if vehi.is_not_locked():
+                        # Upload if not finished uploading
+                        if not vehi.upload_completed():
                             vehi.upload(simulation.rsu_list, cloud_server)
-                    # If finished upload
-                    else:
-                        vehi.free_up()
+                        # If finished upload
+                        else:
+                            vehi.free_up()
             # If locked, lock -1 in every time step
             vehi.update_lock()
 
