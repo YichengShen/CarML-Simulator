@@ -1,0 +1,35 @@
+vehicle:
+  tasks_per_comp_power: 2
+  max_data_rows: 25
+
+
+timer:
+  time_remove_rsu_assigned: 20
+
+  
+comm_range:
+  v2rsu: 600            # vehicle to RSU
+  v2v: 100              # vehicle to vehicle (not built yet)
+  v2i: 0                # vehicle to infrastructure (not built yet)
+
+comm_speed:
+  speed_4g: 1           # units of data that can be uploaded in 1 time step
+
+
+simulation:
+  ROU_FILE: 'osm_boston_common/osm.passenger.trips.xml'
+  NET_FILE: 'osm_boston_common/osm.net.xml'
+  FCD_FILE: 'osm_boston_common/osm_fcd.xml'
+  # ROU_FILE: ''
+  # NET_FILE: 'MonacoST/most.net.xml'
+  # FCD_FILE: 'MonacoST/most_fcd.xml'
+
+  comp_power: 5         # computation power of cars (units of data that the car can compute in 1 time step)
+  comp_power_std: 0     # standard deviation
+  bandwidth: 5          # bandwidth of cars (units of data that the car can download/upload in 1 time step)
+  bandwidth_std: 0      # standard deviation
+  num_rsu: 4            # number of RSU
+
+neural_network:
+  batch_size: 50
+  epoch: 100
