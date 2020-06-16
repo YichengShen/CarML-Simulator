@@ -11,7 +11,6 @@ def simulate(simulation):
     for timestep in root:
         # Maximum training epochs
         if simulation.central_server.num_epoch <= cfg['neural_network']['epoch']:
-
             # Calculate in-real-time RSU traffic every 10 minutes
             if timestep.attrib['time'] != '0.00' and float(timestep.attrib['time']) % 600 == 0:
                 total_traffic = sum(map(lambda x: x.vehicle_traffic, simulation.rsu_list))
@@ -66,6 +65,12 @@ def simulate(simulation):
                     # If locked, lock -1 in every time step
                     else:
                         vehi.update_lock()
+                # If the vehicle is about to exit the map(city), transfer its data to either
+                # nearby vehicles, RSUs, or the central server
+                if vehi.out_of_bounds(root, timestep):
+                    vehi.transfer_data(simulation)
+    print("Final Training Accuracy: Loss: {:.3f}, Accuracy: {:.3%}".format(simulation.central_server.epoch_loss_avg.result(),
+                                                  simulation.central_server.epoch_accuracy.result()))
     return simulation.central_server.model
 
             

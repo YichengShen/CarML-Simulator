@@ -28,6 +28,7 @@ class Vehicle:
     - num_training_data-downloaded
     - training_label_assigned
     - num_training_label_downloaded
+    - data_length
     - gradients
     - upload_complete
     - lock
@@ -45,6 +46,7 @@ class Vehicle:
         self.num_training_data_downloaded = 0
         self.training_label_assigned = []
         self.num_training_label_downloaded = 0
+        self.data_length = 0
         self.gradients = None
         self.upload_complete = False
         self.lock = 0
@@ -84,6 +86,7 @@ class Vehicle:
                     dataset = rsu.dataset.pop()
                     self.training_data_assigned = dataset[0]
                     self.training_label_assigned = dataset[1]
+                    self.data_length = len(self.training_label_assigned)
                     break
         self.num_training_data_downloaded  += int(self.bandwidth)
         self.num_training_label_downloaded += int(self.bandwidth)
@@ -94,7 +97,7 @@ class Vehicle:
         
     def download_completed(self):
         if self.rsu_assigned is not None:
-            return self.num_training_data_downloaded >= len(self.training_data_assigned)
+            return self.num_training_data_downloaded >= self.data_length
         return False
 
     def download_model_from(self, central_server):
@@ -103,11 +106,13 @@ class Vehicle:
     # Assume the car downloads the model directly from the central server when it is computing
     # After completing, store the gradients
     def compute_async(self, central_server):
-        neural_network = Neural_Network()
-        loss_value, self.gradients = neural_network.grad(central_server.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned))
-        central_server.epoch_loss_avg.update_state(loss_value)
-        lock_time = int(len(self.training_data_assigned) / self.comp_power) - 1
-        self.lock += lock_time
+        if central_server.bounded_staleness > 0:
+            neural_network = Neural_Network()
+            loss_value, self.gradients = neural_network.grad(central_server.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned))
+            central_server.epoch_loss_avg.update_state(loss_value)
+            central_server.bounded_staleness -= 1
+            lock_time = int(self.data_length / self.comp_power) - 1
+            self.lock += lock_time
 
     def compute_completed(self):
         return self.gradients is not None
@@ -118,10 +123,74 @@ class Vehicle:
         neural_network.optimizer.apply_gradients(zip(self.gradients, central_server.model.trainable_variables))
         central_server.epoch_accuracy.update_state(np.array(self.training_label_assigned), central_server.model(np.array(self.training_data_assigned), training=True))
         central_server.gradients_received += 1
+        central_server.bounded_staleness += 1
         self.upload_complete = True
 
     def upload_completed(self):
         return self.upload_complete
+
+    def out_of_bounds(self, root, timestep):
+        current_timestep = float(timestep.attrib['time'])
+        next_timestep = root.find('timestep[@time="{:.2f}"]'.format(current_timestep+1))
+        if next_timestep == None:
+            return False
+        else:
+            id_set = set(map(lambda vehicle: vehicle.attrib['id'], next_timestep.findall('vehicle')))
+            return not self.car_id in id_set
+
+    def in_range_vehicle(self, timestep):
+        vehicles_in_range = []
+        for vehicle in timestep.findall('vehicle'):
+            distance = math.sqrt((float(vehicle.attrib['x']) - self.x) ** 2 + (float(vehicle.attrib['y']) - self.y) ** 2)
+            if distance <= cfg['comm_range']['v2v']:
+                vehicles_in_range.append(vehicle)
+        return vehicles_in_range
+
+    # Transfer all training data and labels to one near-by vehicle
+    def transfer_data_to_vehicle(self, simulation, timestep):
+        vehicles_in_range = self.in_range_vehicle(timestep)
+        for vehicle in vehicles_in_range:
+            if vehicle.attrib['id'] not in simulation.vehicle_dict:
+                simulation.add_into_vehicle_dict(vehicle)
+                vehi = simulation.vehicle_dict[vehicle.attrib['id']]
+                vehi.training_data_assigned = self.training_data_assigned
+                vehi.num_training_data_downloaded = self.num_training_data_downloaded
+                vehi.training_label_assigned = self.training_label_assigned
+                vehi.num_training_label_downloaded = self.num_training_label_downloaded
+                vehi.rsu_assigned = self.rsu_assigned
+                return True
+            elif not simulation.vehicle_dict[vehicle.attrib['id']].training_data_assigned:
+                vehi = simulation.vehicle_dict[vehicle.attrib['id']]
+                vehi = simulation.vehicle_dict[vehicle.attrib['id']]
+                vehi.training_data_assigned = self.training_data_assigned
+                vehi.num_training_data_downloaded = self.num_training_data_downloaded
+                vehi.training_label_assigned = self.training_label_assigned
+                vehi.num_training_label_downloaded = self.num_training_label_downloaded
+                vehi.rsu_assigned = self.rsu_assigned
+                return True
+        return False
+
+    # Give assigned data and label back to RSU if the car is about to exit
+    def transfer_data_to_rsu(self, cloest_rsu):
+        cloest_rsu.dataset.append((self.training_data_assigned, self.training_label_assigned))
+
+    # Give assigned data and label back to central server if the car is about to exit
+    def transfer_data_to_central_server(self, central_server):
+        central_server.train_dataset.append((self.training_data_assigned, self.training_label_assigned))
+
+    # Transfer data either through near-by vehicles, RSUs, or central servers when the car is about to exit
+    def transfer_data(self, simulation):
+        # if self.rsu_assigned:
+        #     if not self.transfer_data_to_vehicle:
+        #         closest_rsu = self.closest_rsu(simulation.rsu_list)
+        #         if closest_rsu:
+        #             self.transfer_data_to_rsu(closest_rsu)
+        #         else:
+        #             self.transfer_data_to_central_server(simulation.central_server)
+        if self.rsu_assigned:
+            if self.compute_completed():
+                simulation.central_server.bounded_staleness += 1
+            self.transfer_data_to_central_server(simulation.central_server)
 
     def locked(self):
         return self.lock > 0
@@ -169,6 +238,7 @@ class Central_Server:
     Central Server object for Car ML Simulator.
     Attributes:
     - dataset
+    - num_mini_batches
     - train_dataset
     - test_dataset
     - model
@@ -178,6 +248,7 @@ class Central_Server:
     - rsu_list
     - num_distributed
     - gradients_received
+    - bounded_staleness
     """
     def __init__(self, rsu_list):
         train, test = tf.keras.datasets.mnist.load_data()
@@ -195,6 +266,7 @@ class Central_Server:
         test_images = test_images/255
 
         self.dataset = tf.data.Dataset.from_tensor_slices((train_images, train_labels)).shuffle(200).batch(cfg['neural_network']['batch_size'])
+        self.num_mini_batches = len(list(self.dataset))
         self.train_dataset = []
         self.test_dataset = tf.data.Dataset.from_tensor_slices((test_images, test_labels)).batch(cfg['neural_network']['batch_size'])
         # The structure of the neural network
@@ -209,26 +281,26 @@ class Central_Server:
         self.rsu_list = rsu_list
         self.num_distributed = 0        # Amount of mini-batches already distributed out to RSUs
         self.gradients_received = 0     # Number of gradients received from vehicle in each epoch (Async)
+        self.bounded_staleness = cfg['simulation']['bounded_staleness']
 
     # Initially distribute 1/4 of the data to each RSU
     def distribute_to_rsu(self, degree_of_overlap = 0):
-        num_mini_batches = len(self.train_dataset)
         for rsu in self.rsu_list:
-            initial_distribution = int(0.25 * num_mini_batches * rsu.traffic_proportion)
-            initial_overlapping = int(degree_of_overlap * num_mini_batches)
+            initial_distribution = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
+            initial_overlapping = int(degree_of_overlap * self.num_mini_batches)
             total_distribution = initial_distribution + initial_overlapping
-            rsu.dataset.extend(self.train_dataset[self.num_distributed:total_distribution])
-            self.num_distributed += initial_distribution
+            rsu.dataset.extend(self.train_dataset[:total_distribution])
+            del self.train_dataset[:total_distribution]
     
     # Redistribute part of the data to RSU when the RSU is running low on data
     def redistribute_to_rsu(self, rsu):
-        num_redistributed = int(0.25 * len(self.train_dataset) * rsu.traffic_proportion)
-        rsu.dataset.extend(self.train_dataset[self.num_distributed:self.num_distributed + num_redistributed])
-        self.num_distributed += num_redistributed
+        if self.train_dataset:
+            num_redistributed = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
+            rsu.dataset.extend(self.train_dataset[:num_redistributed])
+            del self.train_dataset[:num_redistributed]
 
     def epoch_completed(self):
-        # return self.gradients_received == len(self.train_dataset) / cfg['neural_network']['batch_size']
-        return self.num_distributed >= len(self.train_dataset)
+        return self.gradients_received >= self.num_mini_batches
 
     def print_accuracy(self):
         print("Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}".format(self.num_epoch,

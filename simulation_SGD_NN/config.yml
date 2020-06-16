@@ -30,6 +30,8 @@ simulation:
   bandwidth_std: 0      # standard deviation
   num_rsu: 4            # number of RSU
 
+  bounded_staleness: 50 # stalness bound for asyncrhnous training
+
 neural_network:
   batch_size: 50
   epoch: 100
