@@ -18,10 +18,14 @@ def simulate(simulation):
                     rsu.traffic_proportion = rsu.vehicle_traffic / total_traffic
                     rsu.vehicle_traffic = 0
 
-            # Redistribute data from central server to RSU if RSU is about to run out of data
             for rsu in simulation.rsu_list:
+                # Redistribute data from central server to RSU if RSU is about to run out of data
                 if rsu.low_on_data():
                     simulation.central_server.redistribute_to_rsu(rsu)
+                # Update the central server model and obtain the latest model when an RSU has accumulated
+                # a centrain number of gradients
+                if rsu.max_gradients_accumulated() or rsu.dataset_empty():
+                    rsu.communicate_with_central_server(simulation.central_server)
 
             # When each epoch is completed, print accuracy of each epoch
             if simulation.central_server.epoch_completed():
@@ -54,12 +58,16 @@ def simulate(simulation):
                     if not vehi.locked():
                         # Compute the gradients using the latest model
                         if not vehi.compute_completed():
-                            vehi.compute_async(simulation.central_server)
+                            # One needs to be commented out
+                            vehi.compute_from_central_server(simulation.central_server)
+                            # vehi.compute_from_rsu(simulation.central_server)
                         # If finished computing
                         else:
                             # Upload the gradients if not finished uploading
                             if not vehi.upload_completed():
-                                vehi.upload_gradients_async(simulation.central_server)
+                                # One needs to be commented out
+                                vehi.upload_gradients_to_central_server(simulation.central_server)
+                                # vehi.upload_gradients_to_rsu(simulation.rsu_list)
                             else:
                                 vehi.free_up()
                     # If locked, lock -1 in every time step
@@ -69,11 +77,9 @@ def simulate(simulation):
                 # nearby vehicles, RSUs, or the central server
                 if vehi.out_of_bounds(root, timestep):
                     vehi.transfer_data(simulation)
-    print("Final Training Accuracy: Loss: {:.3f}, Accuracy: {:.3%}".format(simulation.central_server.epoch_loss_avg.result(),
-                                                  simulation.central_server.epoch_accuracy.result()))
     return simulation.central_server.model
 
-            
+
 def main():
     ROU_FILE = cfg['simulation']['ROU_FILE']
     NET_FILE = cfg['simulation']['NET_FILE']

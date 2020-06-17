@@ -31,7 +31,8 @@ simulation:
   num_rsu: 4            # number of RSU
 
   bounded_staleness: 50 # stalness bound for asyncrhnous training
+  maximum_rsu_accumulative_gradients: 10 # how many gradients does an RSU accumulate before updating the central server
 
 neural_network:
   batch_size: 50
-  epoch: 100
+  epoch: 5

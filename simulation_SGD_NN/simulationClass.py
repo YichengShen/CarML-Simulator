@@ -87,6 +87,7 @@ class Vehicle:
                     self.training_data_assigned = dataset[0]
                     self.training_label_assigned = dataset[1]
                     self.data_length = len(self.training_label_assigned)
+                    self.model = rsu.model
                     break
         self.num_training_data_downloaded  += int(self.bandwidth)
         self.num_training_label_downloaded += int(self.bandwidth)
@@ -105,26 +106,43 @@ class Vehicle:
 
     # Assume the car downloads the model directly from the central server when it is computing
     # After completing, store the gradients
-    def compute_async(self, central_server):
+    def compute_from_central_server(self, central_server):
         if central_server.bounded_staleness > 0:
             neural_network = Neural_Network()
-            loss_value, self.gradients = neural_network.grad(central_server.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned))
-            central_server.epoch_loss_avg.update_state(loss_value)
+            self.gradients = neural_network.grad(central_server.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned), central_server)
             central_server.bounded_staleness -= 1
-            lock_time = int(self.data_length / self.comp_power) - 1
+            lock_time = int(self.bandwidth / 2) + int(self.data_length / self.comp_power) - 1
             self.lock += lock_time
+
+    # Assume the car downloads the model from the RSU and use it to compute the gradients
+    def compute_from_rsu(self, central_server):
+        neural_network = Neural_Network()
+        self.gradients = neural_network.grad(self.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned), central_server)
+        lock_time = int(self.data_length / self.comp_power) - 1
+        self.lock += lock_time
 
     def compute_completed(self):
         return self.gradients is not None
 
-    # Assume the car directly uploads the gradients to the central server and takes zero time
-    def upload_gradients_async(self, central_server):
+    # Assume the car directly uploads the gradients to the central server and update the model of central server
+    def upload_gradients_to_central_server(self, central_server):
         neural_network = Neural_Network()
         neural_network.optimizer.apply_gradients(zip(self.gradients, central_server.model.trainable_variables))
-        central_server.epoch_accuracy.update_state(np.array(self.training_label_assigned), central_server.model(np.array(self.training_data_assigned), training=True))
         central_server.gradients_received += 1
         central_server.bounded_staleness += 1
         self.upload_complete = True
+        lock_time = int(self.bandwidth / 2)
+        self.lock += lock_time
+
+    # Assume the car uploads the gradients to one RSU for the RSU to accumulate the received gradients
+    def upload_gradients_to_rsu(self, rsu_list):
+        closest_rsu = self.closest_rsu(rsu_list)
+        if closest_rsu:
+            closest_rsu.accumulate_gradients(self.gradients)
+            closest_rsu.num_accumulative_gradients += 1
+            self.upload_complete = True
+            lock_time = int(self.bandwidth / 4)
+            self.lock += lock_time
 
     def upload_completed(self):
         return self.upload_complete
@@ -204,6 +222,7 @@ class Vehicle:
         self.training_label_assigned = []
         self.num_training_label_downloaded = 0
         self.rsu_assigned = None
+        self.model = None
         self.gradients = None
         self.upload_complete = False
         
@@ -217,6 +236,9 @@ class RSU:
     - rsu_y
     - rsu_range
     - dataset
+    - model
+    - accumulative_gradients
+    - num_accumulative_gradients
     - vehicle_traffic
     - traffic_proportion
     """
@@ -226,11 +248,49 @@ class RSU:
         self.rsu_y = rsu_y
         self.rsu_range = rsu_range
         self.dataset = []
+        self.model = None
+        self.accumulative_gradients = None
+        self.num_accumulative_gradients = 0
         self.vehicle_traffic = 0
         self.traffic_proportion = 1 / cfg['simulation']['num_rsu']
 
     def low_on_data(self):
         return len(self.dataset) < 10
+
+    # Function used to aggregate gradient values into one
+    def accumulate_gradients(self,step_gradients):
+        if self.accumulative_gradients is None:
+            self.accumulative_gradients = [self.flat_gradients(g) for g in step_gradients]
+        else:
+            for i, g in enumerate(step_gradients):
+                self.accumulative_gradients[i] += self.flat_gradients(g) 
+
+    # Helper function for accumulate_gradients()
+    def flat_gradients(self, grads_or_idx_slices):
+        if type(grads_or_idx_slices) == tf.IndexedSlices:
+            return tf.scatter_nd(
+                tf.expand_dims(grads_or_idx_slices.indices, 1),
+                grads_or_idx_slices.values,
+                grads_or_idx_slices.dense_shape
+            )
+        return grads_or_idx_slices
+
+    def max_gradients_accumulated(self):
+        return self.num_accumulative_gradients >= cfg['simulation']['maximum_rsu_accumulative_gradients']
+
+    def dataset_empty(self):
+        return not self.dataset and self.accumulative_gradients
+
+    # The RSU updates the model in the central server with its accumulative gradients and downloads the 
+    # latest model from the central server
+    def communicate_with_central_server(self, central_server):
+        neural_network = Neural_Network()
+        gradient_zip = zip(self.accumulative_gradients, central_server.model.trainable_variables)
+        neural_network.optimizer.apply_gradients(gradient_zip)
+        central_server.gradients_received += self.num_accumulative_gradients
+        self.model = central_server.model
+        self.accumulative_gradients = None
+        self.num_accumulative_gradients = 0
 
 
 class Central_Server:
@@ -275,8 +335,8 @@ class Central_Server:
                     # tf.keras.layers.Dense(10, activation=tf.nn.relu),
                     tf.keras.layers.Dense(10)
         ])
-        self.epoch_loss_avg = tf.keras.metrics.Mean()
-        self.epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
+        self.epoch_loss_avg = None
+        self.epoch_accuracy = None
         self.num_epoch = 0
         self.rsu_list = rsu_list
         self.num_distributed = 0        # Amount of mini-batches already distributed out to RSUs
@@ -290,6 +350,7 @@ class Central_Server:
             initial_overlapping = int(degree_of_overlap * self.num_mini_batches)
             total_distribution = initial_distribution + initial_overlapping
             rsu.dataset.extend(self.train_dataset[:total_distribution])
+            rsu.model = self.model
             del self.train_dataset[:total_distribution]
     
     # Redistribute part of the data to RSU when the RSU is running low on data
@@ -311,6 +372,8 @@ class Central_Server:
         # Need to loop through the dataset each epoch to shuffle the data
         for x in self.dataset:
             self.train_dataset.append(x)
+        self.epoch_loss_avg = tf.keras.metrics.Mean()
+        self.epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
         self.num_epoch += 1
         self.distribute_to_rsu()
         self.num_distributed = 0
@@ -333,10 +396,12 @@ class Neural_Network:
         return loss_object(y_true=y, y_pred=y_)
     
     # Gradients and loss
-    def grad(self, model, inputs, targets):
+    def grad(self, model, inputs, targets, central_server):
         with tf.GradientTape() as tape:
             loss_value = self.loss(model, inputs, targets, training=True)
-        return loss_value, tape.gradient(loss_value, model.trainable_variables)
+            central_server.epoch_loss_avg.update_state(loss_value)
+            central_server.epoch_accuracy.update_state(targets, central_server.model(inputs, training=True))
+        return tape.gradient(loss_value, model.trainable_variables)
 
 
 class SUMO_Dataset:
