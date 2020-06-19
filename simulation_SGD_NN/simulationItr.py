@@ -29,6 +29,7 @@ def simulate(simulation):
 
             # When each epoch is completed, print accuracy of each epoch
             if simulation.central_server.epoch_completed():
+                simulation.central_server.update_model()
                 simulation.central_server.print_accuracy()
                 simulation.central_server.new_epoch()
 
@@ -58,15 +59,15 @@ def simulate(simulation):
                     if not vehi.locked():
                         # Compute the gradients using the latest model
                         if not vehi.compute_completed():
-                            # One needs to be commented out
-                            vehi.compute_from_central_server(simulation.central_server)
-                            # vehi.compute_from_rsu(simulation.central_server)
+                            # update=True -> compute from central server
+                            # update=False -> compute from RSU
+                            vehi.compute_gradients(simulation.central_server, update=False)
                         # If finished computing
                         else:
                             # Upload the gradients if not finished uploading
                             if not vehi.upload_completed():
                                 # One needs to be commented out
-                                vehi.upload_gradients_to_central_server(simulation.central_server)
+                                vehi.upload_gradients_to_central_server(simulation.central_server, update=False)
                                 # vehi.upload_gradients_to_rsu(simulation.rsu_list)
                             else:
                                 vehi.free_up()
