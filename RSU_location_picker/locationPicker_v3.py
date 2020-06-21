@@ -18,7 +18,7 @@ print("X-range:", x_min, x_max, "\nY-range:", y_min, y_max, "\n")
 x = []
 y = []
 coord = []
-num_points = 0
+num_points = 0 # number of rows in fcd file
 # Calculate traffic on each (x,y)
 # tree = ET.parse("MonacoST/most_fcd.xml")
 tree = ET.parse("osm_boston_common/osm_fcd.xml")
@@ -42,6 +42,8 @@ min_samples = round(num_points * 0.001) # 0.1% of traffic points
 eps = 5 # the initial eps value
 n_clusters_ = -1
 num_rsu = 20
+# Try different eps until we find enough clusters (>= number of rsu we want to place)
+# If this fails, we need to lower our RSU number
 while n_clusters_ < num_rsu:
     print("Testing DBSCAN with min_samples={} and eps={}".format(min_samples, eps))
     db = DBSCAN(eps=eps, min_samples=min_samples).fit(coord)
@@ -86,12 +88,13 @@ def find_center(value):
     center_y = sum(value['y']) / num_points
     return center_x, center_y
 
+# Center_dic contains all clusters with their center as the value
 center_dic = {}
 for key, value in dic.items():
     center = find_center(value)
     center_dic[key] = center
 
-print('center of each cluster: ', center_dic)
+# print('center of each cluster: ', center_dic)
 
 # Load Junctions
 tree = ET.parse("osm_boston_common/osm.net.xml")
@@ -102,6 +105,7 @@ junction_list = root.findall('junction')
 def intersection_area(d, R, r):
     """ Return the area of intersection of two circles.
     The circles have radii R and r, and their centres are separated by d.
+    https://scipython.com/book/chapter-8-scipy/problems/p84/overlapping-circles/
     """
     if d <= abs(R-r):
         # One circle is entirely enclosed in the other.
@@ -114,8 +118,6 @@ def intersection_area(d, R, r):
     beta = np.arccos((d2 + R2 - r2) / (2*d*R))
     return r2 * alpha + R2 * beta - 0.5 * (r2 * np.sin(2*alpha) + R2 * np.sin(2*beta))
 
-rsu_counter = num_rsu
-rsu_range = 300
 
 closest_junction_distance = {}
 junction_dic= {}
@@ -123,22 +125,30 @@ for key in center_dic.keys():
     closest_junction_distance[key] = 99999
     junction_dic[key] = None
 
+rsu_counter = num_rsu
+rsu_range = 300 # Later, this should match RSU range defined in our simulator
+
+# Loop starting the densest cluster
 for key in order:
+    # Break if finished picking all RSUs
     if rsu_counter <= 0:
         break
-    if key != -1:
+    if key != -1: # -1 is the noise
         for junction in junction_list:
-            center_x, center_y = center_dic[key]
-            distance = sqrt((float(junction.attrib['x']) - center_x) ** 2 + (float(junction.attrib['y']) - center_y) ** 2)
             overlap = False
+            # Compare the current junction with every RSU that has been picked out already
             for junc in junction_dic.values():
                 if junc is not None:
+                    # d -> distance between two junctions(potential RSU) -> distance between 2 circles
                     d = sqrt((float(junc.attrib['x']) - float(junction.attrib['x'])) ** 2 + (float(junc.attrib['y']) - float(junction.attrib['y'])) ** 2)
                     area_intersect = intersection_area(d, rsu_range, rsu_range)
                     ratio_intersect = area_intersect / (rsu_range**2 * np.pi)
-                    if ratio_intersect >= 0.8:
+                    if ratio_intersect >= 0.8: # the allowed ratio of overlaping
                         overlap = True
+            # If the current junction passes the overlap test, then update junction_dic
             if not overlap:
+                center_x, center_y = center_dic[key]
+                distance = sqrt((float(junction.attrib['x']) - center_x) ** 2 + (float(junction.attrib['y']) - center_y) ** 2)
                 if distance < closest_junction_distance[key]:
                     closest_junction_distance[key] = distance
                     junction_dic[key] = junction
