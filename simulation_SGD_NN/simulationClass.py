@@ -1,5 +1,7 @@
 import math
 import heapq
+import random
+from collections import deque
 import numpy as np
 import yaml
 import xml.etree.ElementTree as ET 
@@ -28,8 +30,11 @@ class Vehicle:
     - num_training_data-downloaded
     - training_label_assigned
     - num_training_label_downloaded
+    - data_index
+    - data_epoch
     - data_length
     - gradients
+    - gradients_index
     - upload_complete
     - lock
     """
@@ -46,8 +51,11 @@ class Vehicle:
         self.num_training_data_downloaded = 0
         self.training_label_assigned = []
         self.num_training_label_downloaded = 0
-        self.data_length = 0
+        self.data_index = -1                        # The index of the mini-batch assigned
+        self.data_epoch = 0                         # The epoch the mini-batch belongs to
+        self.data_length = 0                        # The length of the mini-batch
         self.gradients = None
+        self.gradients_index = None                 # The index of the central server model when the car downloads the model
         self.upload_complete = False
         self.lock = 0
 
@@ -77,15 +85,20 @@ class Vehicle:
                 heapq.heappush(in_range_rsus, (distance, rsu))
         return [heapq.heappop(in_range_rsus)[1] for i in range(len(in_range_rsus))]
 
-    def download_from_rsu(self, rsu_list):
+    def download_from_rsu(self, rsu_list, central_server):
+        # If a car still holds data from previous epoch
+        if self.data_epoch != central_server.num_epoch:
+            self.rsu_assigned = None
         if self.rsu_assigned is None:
             for rsu in rsu_list:
                 if rsu.dataset:
                     self.rsu_assigned = rsu
                     rsu.vehicle_traffic += 1
-                    dataset = rsu.dataset.pop()
-                    self.training_data_assigned = dataset[0]
-                    self.training_label_assigned = dataset[1]
+                    dataset = rsu.dataset.popleft()
+                    self.training_data_assigned = dataset[1][0]
+                    self.training_label_assigned = dataset[1][1]
+                    self.data_index = dataset[0]
+                    self.data_epoch = central_server.num_epoch
                     self.data_length = len(self.training_label_assigned)
                     self.model = rsu.model
                     break
@@ -106,12 +119,25 @@ class Vehicle:
 
     # If update is True, the vehicle computes the gradients with the model from the central server
     # If update is False, the vehicle computes the gradients with the model from an RSU
-    def compute_gradients(self, central_server, update: bool):
+    # If bounded is True, the training will be bounded by bounded_staleness
+    # If bounded is False, the training will be bounded by max_gradients_difference, which is the gradient difference between when the vehicle download and update the model
+    def compute_gradients(self, central_server, update: bool, bounded: bool):
+        # If the car still holds data from previous epoch
+        if self.data_epoch != central_server.num_epoch:
+            self.free_up()
+            return
         if update:
-            if central_server.bounded_staleness > 0:
+            if bounded:
+                if central_server.bounded_staleness > 0:
+                    neural_network = Neural_Network()
+                    self.gradients = neural_network.grad(central_server.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned), central_server)
+                    central_server.bounded_staleness -= 1
+                    lock_time = int(self.bandwidth / 2) + int(self.data_length / self.comp_power) - 1
+                    self.lock += lock_time
+            else:
                 neural_network = Neural_Network()
                 self.gradients = neural_network.grad(central_server.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned), central_server)
-                central_server.bounded_staleness -= 1
+                self.gradients_index = central_server.gradients_received
                 lock_time = int(self.bandwidth / 2) + int(self.data_length / self.comp_power) - 1
                 self.lock += lock_time
         else:
@@ -124,24 +150,42 @@ class Vehicle:
         return self.gradients is not None
 
     # Assume the car directly uploads the gradients to the central server and update the model of central server
-    def upload_gradients_to_central_server(self, central_server, update: bool):
+    def upload_gradients_to_central_server(self, central_server, update: bool, bounded: bool):
+        # If the gradients is still from the last epoch
+        if self.data_epoch != central_server.num_epoch:
+            self.free_up()
+            return
         neural_network = Neural_Network()
-        if update:
-            neural_network.optimizer.apply_gradients(zip(self.gradients, central_server.model.trainable_variables))
-            central_server.gradients_received += 1
-            central_server.bounded_staleness += 1
-            self.upload_complete = True
-            lock_time = int(self.bandwidth / 2)
-            self.lock += lock_time
-        else:
-            neural_network.accumulate_gradients(central_server, self.gradients)
-            central_server.gradients_received += 1
-            self.upload_complete = True
-            lock_time = int(self.bandwidth / 2)
-            self.lock += lock_time
+        if self.data_index not in central_server.received_data:
+            if update:
+                if bounded:
+                    neural_network.optimizer.apply_gradients(zip(self.gradients, central_server.model.trainable_variables))
+                    central_server.gradients_received += 1
+                    lock_time = int(self.bandwidth / 2)
+                    self.lock += lock_time
+                else:
+                    # The current gradients cannot be max_gradients_difference behind the current model
+                    if central_server.gradients_received - self.gradients_index <= cfg['simulation']['max_gradients_difference']:
+                        neural_network.optimizer.apply_gradients(zip(self.gradients, central_server.model.trainable_variables))
+                        central_server.gradients_received += 1
+                        lock_time = int(self.bandwidth / 2)
+                        self.lock += lock_time
+            else:
+                neural_network.accumulate_gradients(central_server, self.gradients)
+                central_server.gradients_received += 1
+                lock_time = int(self.bandwidth / 2)
+                self.lock += lock_time
+            central_server.assigned_data.remove(self.data_index)
+            central_server.received_data.add(self.data_index)
+        central_server.bounded_staleness += 1
+        self.upload_complete = True
 
     # Assume the car uploads the gradients to one RSU for the RSU to accumulate the received gradients
-    def upload_gradients_to_rsu(self, rsu_list):
+    def upload_gradients_to_rsu(self, rsu_list, central_server):
+        # If the gradients is still from the last epoch
+        if self.data_epoch != central_server.num_epoch:
+            self.free_up()
+            return
         closest_rsu = self.closest_rsu(rsu_list)
         if closest_rsu:
             neural_network = Neural_Network()
@@ -185,6 +229,9 @@ class Vehicle:
                 vehi.training_label_assigned = self.training_label_assigned
                 vehi.num_training_label_downloaded = self.num_training_label_downloaded
                 vehi.rsu_assigned = self.rsu_assigned
+                vehi.data_index = self.data_index
+                vehi.data_epoch = self.data_epoch
+                vehi.gradients_index = self.gradients_index
                 return True
             elif not simulation.vehicle_dict[vehicle.attrib['id']].training_data_assigned:
                 vehi = simulation.vehicle_dict[vehicle.attrib['id']]
@@ -194,19 +241,22 @@ class Vehicle:
                 vehi.training_label_assigned = self.training_label_assigned
                 vehi.num_training_label_downloaded = self.num_training_label_downloaded
                 vehi.rsu_assigned = self.rsu_assigned
+                vehi.data_index = self.data_index
+                vehi.data_epoch = self.data_epoch
+                vehi.gradients_index = self.gradients_index
                 return True
         return False
 
     # Give assigned data and label back to RSU if the car is about to exit
     def transfer_data_to_rsu(self, cloest_rsu):
-        cloest_rsu.dataset.append((self.training_data_assigned, self.training_label_assigned))
+        cloest_rsu.dataset.append((self.data_index, (self.training_data_assigned, self.training_label_assigned)))
 
     # Give assigned data and label back to central server if the car is about to exit
     def transfer_data_to_central_server(self, central_server):
-        central_server.train_dataset.append((self.training_data_assigned, self.training_label_assigned))
+        central_server.train_dataset.append((self.data_index, (self.training_data_assigned, self.training_label_assigned)))
 
     # Transfer data either through near-by vehicles, RSUs, or central servers when the car is about to exit
-    def transfer_data(self, simulation):
+    def transfer_data(self, simulation, timestep):
         # if self.rsu_assigned:
         #     if not self.transfer_data_to_vehicle:
         #         closest_rsu = self.closest_rsu(simulation.rsu_list)
@@ -214,10 +264,14 @@ class Vehicle:
         #             self.transfer_data_to_rsu(closest_rsu)
         #         else:
         #             self.transfer_data_to_central_server(simulation.central_server)
+        # if self.rsu_assigned:
+        #     if self.compute_completed():
+        #         simulation.central_server.bounded_staleness += 1
+        #     self.transfer_data_to_central_server(simulation.central_server)
         if self.rsu_assigned:
             if self.compute_completed():
                 simulation.central_server.bounded_staleness += 1
-            self.transfer_data_to_central_server(simulation.central_server)
+            self.transfer_data_to_vehicle(simulation, timestep)
 
     def locked(self):
         return self.lock > 0
@@ -234,6 +288,11 @@ class Vehicle:
         self.model = None
         self.gradients = None
         self.upload_complete = False
+        self.data_index = -1
+        self.data_epoch = 0
+        self.data_length = 0
+        self.gradients = None
+        self.gradients_index = None
         
 
 class RSU:
@@ -256,7 +315,7 @@ class RSU:
         self.rsu_x = rsu_x
         self.rsu_y = rsu_y
         self.rsu_range = rsu_range
-        self.dataset = []
+        self.dataset = deque()
         self.model = None
         self.accumulative_gradients = None
         self.num_accumulative_gradients = 0
@@ -301,10 +360,11 @@ class Central_Server:
     - epoch_accuracy
     - num_epoch
     - rsu_list
-    - num_distributed
     - accumulative_gradients
     - gradients_received
     - bounded_staleness
+    - assigned_data
+    - received_data
     """
     def __init__(self, rsu_list):
         train, test = tf.keras.datasets.mnist.load_data()
@@ -326,6 +386,7 @@ class Central_Server:
         self.dataset = tf.data.Dataset.from_tensor_slices((train_images, train_labels)).shuffle(int(num_training_data/batch_size)).batch(batch_size)
         self.num_mini_batches = len(list(self.dataset))
         self.train_dataset = []
+        self.train_dataset_index = []
         self.test_dataset = tf.data.Dataset.from_tensor_slices((test_images, test_labels)).batch(batch_size)
         # The structure of the neural network
         self.model = tf.keras.Sequential([
@@ -337,10 +398,12 @@ class Central_Server:
         self.epoch_accuracy = None
         self.num_epoch = 0
         self.rsu_list = rsu_list
-        self.num_distributed = 0        # Amount of mini-batches already distributed out to RSUs
         self.accumulative_gradients = None
         self.gradients_received = 0     # Number of gradients received from vehicle in each epoch (Async)
         self.bounded_staleness = cfg['simulation']['bounded_staleness']
+
+        self.assigned_data = set()
+        self.received_data = set()
 
     # Initially distribute 1/4 of the data to each RSU
     def distribute_to_rsu(self, degree_of_overlap = 0):
@@ -348,7 +411,10 @@ class Central_Server:
             initial_distribution = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
             initial_overlapping = int(degree_of_overlap * self.num_mini_batches)
             total_distribution = initial_distribution + initial_overlapping
-            rsu.dataset.extend(self.train_dataset[:total_distribution])
+            data = self.train_dataset[:total_distribution]
+            indexs = set(map(lambda x: x[0], data))
+            rsu.dataset = deque(data)
+            self.assigned_data |= indexs
             rsu.model = self.model
             del self.train_dataset[:total_distribution]
     
@@ -356,11 +422,20 @@ class Central_Server:
     def redistribute_to_rsu(self, rsu):
         if self.train_dataset:
             num_redistributed = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
-            rsu.dataset.extend(self.train_dataset[:num_redistributed])
+            data = self.train_dataset[:num_redistributed]
+            indexs = set(map(lambda x: x[0], data))
+            rsu.dataset.extend(data)
+            self.assigned_data |= indexs
             del self.train_dataset[:num_redistributed]
+        elif self.assigned_data:
+            # print(self.assigned_data)
+            num_redistributed = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
+            # assigned_data = list(self.assigned_data)
+            for _ in range(min(num_redistributed, len(self.assigned_data))):
+                rsu.dataset.append(self.train_dataset_index[random.choice(tuple(self.assigned_data))])
 
     def epoch_completed(self):
-        return self.gradients_received >= self.num_mini_batches
+        return len(self.received_data) == self.num_mini_batches
 
     # Update the model with its accumulative gradients
     # Used for batch gradient descent
@@ -378,13 +453,15 @@ class Central_Server:
 
     def new_epoch(self):
         # Need to loop through the dataset each epoch to shuffle the data
-        for x in self.dataset:
-            self.train_dataset.append(x)
+        for i, (x, y) in self.dataset.enumerate().as_numpy_iterator():
+            self.train_dataset.append((i,(x.tolist(), y.tolist())))
+        self.train_dataset_index = self.train_dataset.copy()
         self.epoch_loss_avg = tf.keras.metrics.Mean()
         self.epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
         self.num_epoch += 1
+        self.assigned_data = set()
+        self.received_data = set()
         self.distribute_to_rsu()
-        self.num_distributed = 0
         self.gradients_received = 0
 
 
@@ -449,11 +526,18 @@ class SUMO_Dataset:
             vehicle_dict[vehicle.attrib['id']] = Vehicle(vehicle.attrib['id'], comp_power, comp_power_std, bandwidth, bandwidth_std)
         return vehicle_dict
 
-    def rsuList(self, rsu_range, rsu_nums):
+    def rsuList_random(self, rsu_range, rsu_nums):
         tree = ET.parse(self.NET_file)
         root = tree.getroot()
         rsu_list = []
         junction_list = np.random.choice(root.findall('junction'), rsu_nums, replace=False)
+        for i in range(rsu_nums):
+            id = 'rsu' + str(i)
+            rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range))
+        return rsu_list
+
+    def rsuList(self, rsu_range, rsu_nums, junction_list):
+        rsu_list = []
         for i in range(rsu_nums):
             id = 'rsu' + str(i)
             rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range))

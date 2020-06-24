@@ -1,14 +1,17 @@
 from simulationClass import *
+# from locationPicker_v3 import *
 import xml.etree.ElementTree as ET 
 
 def simulate(simulation):
     simulation.central_server.new_epoch()
-
     tree = ET.parse(simulation.FCD_file)
     root = tree.getroot()
 
     # For each time step (sec) in the FCD file 
     for timestep in root:
+        # print(simulation.central_server.gradients_received)
+        # print(simulation.central_server.assigned_data)
+
         # Maximum training epochs
         if simulation.central_server.num_epoch <= cfg['neural_network']['epoch']:
             # Calculate in-real-time RSU traffic every 10 minutes
@@ -49,7 +52,7 @@ def simulate(simulation):
                     rsus_in_range = vehi.in_range_rsus(simulation.rsu_list)
                     # Download from RSU if in range of RSU
                     if vehi.rsu_assigned is None or vehi.rsu_assigned in rsus_in_range:
-                        vehi.download_from_rsu(rsus_in_range)
+                        vehi.download_from_rsu(rsus_in_range, simulation.central_server)
                     # Download from the central server if not in range of RSU
                     else:
                         vehi.download_from_central_server()
@@ -61,14 +64,14 @@ def simulate(simulation):
                         if not vehi.compute_completed():
                             # update=True -> compute from central server
                             # update=False -> compute from RSU
-                            vehi.compute_gradients(simulation.central_server, update=False)
+                            vehi.compute_gradients(simulation.central_server, update=True, bounded=False)
                         # If finished computing
                         else:
                             # Upload the gradients if not finished uploading
                             if not vehi.upload_completed():
                                 # One needs to be commented out
-                                vehi.upload_gradients_to_central_server(simulation.central_server, update=False)
-                                # vehi.upload_gradients_to_rsu(simulation.rsu_list)
+                                vehi.upload_gradients_to_central_server(simulation.central_server, update=True, bounded=False)
+                                # vehi.upload_gradients_to_rsu(simulation.rsu_list, simulation.central_server)
                             else:
                                 vehi.free_up()
                     # If locked, lock -1 in every time step
@@ -76,8 +79,8 @@ def simulate(simulation):
                         vehi.update_lock()
                 # If the vehicle is about to exit the map(city), transfer its data to either
                 # nearby vehicles, RSUs, or the central server
-                if vehi.out_of_bounds(root, timestep):
-                    vehi.transfer_data(simulation)
+                if vehi.out_of_bounds(root, timestep) and not vehi.upload_completed():
+                    vehi.transfer_data(simulation, timestep)
     return simulation.central_server.model
 
 
@@ -91,14 +94,15 @@ def main():
 
     sumo_data = SUMO_Dataset(ROU_FILE, NET_FILE)
     vehicle_dict = {}
-    rsu_list = sumo_data.rsuList(RSU_RANGE, NUM_RSU)
+    # rsu_list = sumo_data.rsuList(RSU_RANGE, NUM_RSU, output_junctions)
+    rsu_list = sumo_data.rsuList_random(RSU_RANGE, NUM_RSU)
     central_server = Central_Server(rsu_list)
 
     simulation = Simulation(FCD_FILE, vehicle_dict, rsu_list, central_server)
     model = simulate(simulation)
 
     # Test the accuracy of the computed model
-    test_accuracy = tf.keras.metrics.Accuracy()
+    test_accuracy = tf.keras.metrics.Accuracy()     
     for (x, y) in central_server.test_dataset:
         logits = model(x, training=False)
         prediction = tf.argmax(logits, axis=1, output_type=tf.int32)

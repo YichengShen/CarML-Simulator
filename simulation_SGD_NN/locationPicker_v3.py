@@ -41,7 +41,7 @@ for timestep in root:
 min_samples = round(num_points * 0.001) # 0.1% of traffic points
 eps = 5 # the initial eps value
 n_clusters_ = -1
-num_rsu = 20
+num_rsu = 6
 # Try different eps until we find enough clusters (>= number of rsu we want to place)
 # If this fails, we need to lower our RSU number
 while n_clusters_ < num_rsu:
@@ -165,11 +165,13 @@ for key in order:
 
 x_rsu = []
 y_rsu = []
+output_junctions = []
 for key, junction in junction_dic.items():
     if junction is not None:
         print("Cluster:", key, "Coord:", (float(junction.attrib['x']), float(junction.attrib['y'])), "Traffic Density:", dicc[key])
         x_rsu.append(float(junction.attrib['x']))
         y_rsu.append(float(junction.attrib['y']))
+        output_junctions.append(junction)
 
 # Plot RSU as red stars
 plt.scatter(x_rsu, y_rsu, s=50, c='red', marker='*')
