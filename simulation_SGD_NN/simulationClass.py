@@ -12,8 +12,6 @@ import tensorflow_datasets as tfds
 file = open('config.yml', 'r')
 cfg = yaml.load(file, Loader=yaml.FullLoader)
 
-np.random.seed(3)
-
 class Vehicle:
     """
     Vehicle object for Car ML Simulator.
@@ -264,14 +262,14 @@ class Vehicle:
         #             self.transfer_data_to_rsu(closest_rsu)
         #         else:
         #             self.transfer_data_to_central_server(simulation.central_server)
-        # if self.rsu_assigned:
-        #     if self.compute_completed():
-        #         simulation.central_server.bounded_staleness += 1
-        #     self.transfer_data_to_central_server(simulation.central_server)
         if self.rsu_assigned:
             if self.compute_completed():
                 simulation.central_server.bounded_staleness += 1
-            self.transfer_data_to_vehicle(simulation, timestep)
+            self.transfer_data_to_central_server(simulation.central_server)
+        # if self.rsu_assigned:
+        #     if self.compute_completed():
+        #         simulation.central_server.bounded_staleness += 1
+        #     self.transfer_data_to_vehicle(simulation, timestep)
 
     def locked(self):
         return self.lock > 0
@@ -435,7 +433,8 @@ class Central_Server:
                 rsu.dataset.append(self.train_dataset_index[random.choice(tuple(self.assigned_data))])
 
     def epoch_completed(self):
-        return len(self.received_data) == self.num_mini_batches
+        # return len(self.received_data) == self.num_mini_batches
+        return self.gradients_received >= self.num_mini_batches
 
     # Update the model with its accumulative gradients
     # Used for batch gradient descent

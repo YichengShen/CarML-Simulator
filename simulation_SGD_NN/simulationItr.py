@@ -19,6 +19,7 @@ def simulate(simulation):
                 total_traffic = sum(map(lambda x: x.vehicle_traffic, simulation.rsu_list))
                 for rsu in simulation.rsu_list:
                     rsu.traffic_proportion = rsu.vehicle_traffic / total_traffic
+                    print('rsu-id: ', rsu.rsu_id, rsu.traffic_proportion)
                     rsu.vehicle_traffic = 0
 
             for rsu in simulation.rsu_list:
@@ -64,14 +65,14 @@ def simulate(simulation):
                         if not vehi.compute_completed():
                             # update=True -> compute from central server
                             # update=False -> compute from RSU
-                            vehi.compute_gradients(simulation.central_server, update=True, bounded=False)
+                            vehi.compute_gradients(simulation.central_server, update=False, bounded=True)
                         # If finished computing
                         else:
                             # Upload the gradients if not finished uploading
                             if not vehi.upload_completed():
                                 # One needs to be commented out
-                                vehi.upload_gradients_to_central_server(simulation.central_server, update=True, bounded=False)
-                                # vehi.upload_gradients_to_rsu(simulation.rsu_list, simulation.central_server)
+                                # vehi.upload_gradients_to_central_server(simulation.central_server, update=True, bounded=True)
+                                vehi.upload_gradients_to_rsu(simulation.rsu_list, simulation.central_server)
                             else:
                                 vehi.free_up()
                     # If locked, lock -1 in every time step
