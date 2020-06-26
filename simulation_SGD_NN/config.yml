@@ -8,7 +8,7 @@ timer:
 
   
 comm_range:
-  v2rsu: 200            # vehicle to RSU
+  v2rsu: 100            # vehicle to RSU
   v2v: 100              # vehicle to vehicle (not built yet)
   v2i: 0                # vehicle to infrastructure (not built yet)
 
@@ -38,4 +38,4 @@ simulation:
 neural_network:
   batch_size: 50
   epoch: 100
-  learning_rate: 0.02
+  learning_rate: 0.01

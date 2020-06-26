@@ -4,16 +4,10 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
+import yaml
 
-# Load boundaries
-tree = ET.parse("osm_boston_common/osm.net.xml")
-root = tree.getroot()
-bounds = root[0].attrib["convBoundary"].split(",")
-x_min = ceil(float(bounds[0]))
-y_min = ceil(float(bounds[1]))
-x_max = ceil(float(bounds[2]))
-y_max = ceil(float(bounds[3]))
-print("X-range:", x_min, x_max, "\nY-range:", y_min, y_max, "\n")
+file = open('config.yml', 'r')
+cfg = yaml.load(file, Loader=yaml.FullLoader)
 
 x = []
 y = []
@@ -41,11 +35,11 @@ for timestep in root:
 min_samples = round(num_points * 0.001) # 0.1% of traffic points
 eps = 5 # the initial eps value
 n_clusters_ = -1
-num_rsu = 6
+num_rsu = cfg['simulation']['num_rsu']
 # Try different eps until we find enough clusters (>= number of rsu we want to place)
 # If this fails, we need to lower our RSU number
 while n_clusters_ < num_rsu:
-    print("Testing DBSCAN with min_samples={} and eps={}".format(min_samples, eps))
+    # print("Testing DBSCAN with min_samples={} and eps={}".format(min_samples, eps))
     db = DBSCAN(eps=eps, min_samples=min_samples).fit(coord)
     labels = db.labels_ # The labels has the same shape as coord, each index i of label tells which cluster index i of coord is in
     n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
@@ -59,8 +53,8 @@ while n_clusters_ < num_rsu:
 # Note: The cluster with the key -1 are noise (outliers) and we don't care about it
 dicc = Counter(labels)
 order = sorted(dicc, key=dicc.get, reverse=True)
-print('number of clusters: ', n_clusters_)
-print('density of each cluster', dicc)
+# print('number of clusters: ', n_clusters_)
+# print('density of each cluster', dicc)
 
 # Plot the new scatter plot with each cluster colored
 dic = defaultdict(lambda: defaultdict(list))
@@ -71,14 +65,14 @@ for i, x in enumerate(labels):
 def largestN(n):
     return order[1:n+1]
 
-largest_dic = {}
-largest = largestN(num_rsu)
-for key, value in dic.items():
-    if key in largest and key != -1:
-        largest_dic[key] = value
-        plt.scatter(value['x'], value['y'], s=0.05, c='black')
-    else:
-        plt.scatter(value['x'], value['y'], s=0.05)
+# largest_dic = {}
+# largest = largestN(num_rsu)
+# for key, value in dic.items():
+#     if key in largest and key != -1:
+#         largest_dic[key] = value
+#         plt.scatter(value['x'], value['y'], s=0.05, c='black')
+#     else:
+#         plt.scatter(value['x'], value['y'], s=0.05)
 # plt.show()
 
 # Find the center of a cluster
@@ -126,7 +120,7 @@ for key in center_dic.keys():
     junction_dic[key] = None
 
 rsu_counter = num_rsu
-rsu_range = 300 # Later, this should match RSU range defined in our simulator
+rsu_range = cfg['comm_range']['v2rsu'] # Later, this should match RSU range defined in our simulator
 
 # Loop starting the densest cluster
 for key in order:
@@ -174,5 +168,5 @@ for key, junction in junction_dic.items():
         output_junctions.append(junction)
 
 # Plot RSU as red stars
-plt.scatter(x_rsu, y_rsu, s=50, c='red', marker='*')
-plt.show()
+# plt.scatter(x_rsu, y_rsu, s=50, c='red', marker='*')
+# plt.show()
