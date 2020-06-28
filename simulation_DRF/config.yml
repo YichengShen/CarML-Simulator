@@ -17,9 +17,9 @@ comm_speed:
 
 
 simulation:
-  ROU_FILE: 'osm_boston_common/osm.passenger.trips.xml'
-  NET_FILE: 'osm_boston_common/osm.net.xml'
-  FCD_FILE: 'osm_boston_common/osm_fcd.xml'
+  ROU_FILE: '../osm_boston_common/osm.passenger.trips.xml'
+  NET_FILE: '../osm_boston_common/osm.net.xml'
+  FCD_FILE: '../osm_boston_common/osm_fcd.xml'
   # ROU_FILE: ''
   # NET_FILE: 'MonacoST/most.net.xml'
   # FCD_FILE: 'MonacoST/most_fcd.xml'
