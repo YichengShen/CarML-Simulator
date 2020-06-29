@@ -1,5 +1,5 @@
 from simulationClass import *
-from locationPicker_v3 import output_junctions
+from  locationPicker_v3 import output_junctions
 import xml.etree.ElementTree as ET 
 
 def simulate(simulation):
@@ -9,7 +9,6 @@ def simulate(simulation):
 
     # For each time step (sec) in the FCD file 
     for timestep in root:
-        
         # Maximum training epochs
         if simulation.central_server.num_epoch <= cfg['neural_network']['epoch']:
             # Calculate in-real-time RSU traffic every 10 minutes

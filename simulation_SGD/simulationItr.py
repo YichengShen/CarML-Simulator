@@ -4,12 +4,12 @@ import xml.etree.ElementTree as ET
 
 def simulate(simulation):
     simulation.central_server.new_epoch()
+    simulation.central_server.distribute_to_rsu()
     tree = ET.parse(simulation.FCD_file)
     root = tree.getroot()
-
     # For each time step (sec) in the FCD file 
     for timestep in root:
-        
+        # print(simulation.central_server.assigned_data)
         # Maximum training epochs
         if simulation.central_server.num_epoch <= cfg['neural_network']['epoch']:
             # Calculate in-real-time RSU traffic every 10 minutes
@@ -19,14 +19,17 @@ def simulate(simulation):
                     rsu.traffic_proportion = rsu.vehicle_traffic / total_traffic
                     rsu.vehicle_traffic = 0
 
-            for rsu in simulation.rsu_list:
-                # Redistribute data from central server to RSU if RSU is about to run out of data
-                if rsu.low_on_data():
-                    simulation.central_server.redistribute_to_rsu(rsu)
-                # Update the central server model and obtain the latest model when an RSU has accumulated
-                # a centrain number of gradients
-                if rsu.max_gradients_accumulated() or rsu.dataset_empty():
-                    rsu.communicate_with_central_server(simulation.central_server)
+            if timestep.attrib['time'] != '0.00' and float(timestep.attrib['time']) % 120 == 0:
+                simulation.central_server.redistribute_to_rsu_buffer()
+
+            # for rsu in simulation.rsu_list:
+            #     # Redistribute data from central server to RSU if RSU is about to run out of data
+            #     if rsu.low_on_data():
+            #         simulation.central_server.redistribute_to_rsu(rsu)
+            #     # Update the central server model and obtain the latest model when an RSU has accumulated
+            #     # a centrain number of gradients
+            #     if rsu.max_gradients_accumulated() or rsu.dataset_empty():
+            #         rsu.communicate_with_central_server(simulation.central_server)
 
             # When each epoch is completed, print accuracy of each epoch
             if simulation.central_server.epoch_completed():
@@ -71,7 +74,10 @@ def simulate(simulation):
                                 vehi.upload_gradients_to_central_server(simulation.central_server, update=True, bounded=True)
                                 # vehi.upload_gradients_to_rsu(simulation.rsu_list, simulation.central_server)
                             else:
-                                vehi.free_up()
+                                if len(simulation.central_server.received_data) <= 3/4*simulation.central_server.num_mini_batches:
+                                    vehi.free_up_c()
+                                else:
+                                    vehi.free_up()
                     # If locked, lock -1 in every time step
                     else:
                         vehi.update_lock()

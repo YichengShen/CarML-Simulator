@@ -30,7 +30,6 @@ class Vehicle:
     - training_label_assigned
     - num_training_label_downloaded
     - data_index
-    - data_epoch
     - data_length
     - gradients
     - gradients_index
@@ -51,10 +50,10 @@ class Vehicle:
         self.training_label_assigned = []
         self.num_training_label_downloaded = 0
         self.data_index = -1                        # The index of the mini-batch assigned
-        self.data_epoch = 0                         # The epoch the mini-batch belongs to
         self.data_length = 0                        # The length of the mini-batch
         self.gradients = None
         self.gradients_index = None                 # The index of the central server model when the car downloads the model
+        self.data_epoch = 0
         self.upload_complete = False
         self.lock = 0
 
@@ -85,19 +84,26 @@ class Vehicle:
         return [heapq.heappop(in_range_rsus)[1] for i in range(len(in_range_rsus))]
 
     def download_from_rsu(self, rsu_list, central_server):
-        # If a car still holds data from previous epoch
-        if self.data_epoch != central_server.num_epoch:
-            self.rsu_assigned = None
         if self.rsu_assigned is None:
             for rsu in rsu_list:
-                if rsu.dataset:
+                if rsu.data_index < rsu.data_length:
                     self.rsu_assigned = rsu
                     rsu.vehicle_traffic += 1
-                    dataset = rsu.dataset.popleft()
+                    dataset = rsu.dataset[rsu.data_index]
+                    rsu.data_index += 1
                     self.training_data_assigned = dataset[1][0]
                     self.training_label_assigned = dataset[1][1]
                     self.data_index = dataset[0]
-                    self.data_epoch = central_server.num_epoch
+                    self.data_length = len(self.training_label_assigned)
+                    self.model = rsu.model
+                    break
+                if rsu.data_buffer:
+                    self.rsu_assigned = rsu
+                    rsu.vehicle_traffic += 1
+                    dataset = rsu.data_buffer.pop()
+                    self.training_data_assigned = dataset[1][0]
+                    self.training_label_assigned = dataset[1][1]
+                    self.data_index = dataset[0]
                     self.data_length = len(self.training_label_assigned)
                     self.model = rsu.model
                     break
@@ -121,8 +127,11 @@ class Vehicle:
     # If bounded is True, the training will be bounded by bounded_staleness
     # If bounded is False, the training will be bounded by max_gradients_difference, which is the gradient difference between when the vehicle download and update the model
     def compute_gradients(self, central_server, update: bool, bounded: bool):
-        # If the car still holds data from previous epoch
-        if self.data_epoch != central_server.num_epoch:
+        if self.data_index in central_server.received_data:
+            return
+        if self.data_epoch == 0:
+            self.data_epoch == central_server.num_epoch
+        elif self.data_epoch != central_server.num_epoch:
             self.free_up()
             return
         if update:
@@ -130,18 +139,21 @@ class Vehicle:
                 if central_server.bounded_staleness > 0:
                     neural_network = Neural_Network()
                     self.gradients = neural_network.grad(central_server.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned), central_server)
+                    self.data_epoch = central_server.num_epoch
                     central_server.bounded_staleness -= 1
                     lock_time = int(self.bandwidth / 2) + int(self.data_length / self.comp_power) - 1
                     self.lock += lock_time
             else:
                 neural_network = Neural_Network()
                 self.gradients = neural_network.grad(central_server.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned), central_server)
+                self.data_epoch = central_server.num_epoch
                 self.gradients_index = central_server.gradients_received
                 lock_time = int(self.bandwidth / 2) + int(self.data_length / self.comp_power) - 1
                 self.lock += lock_time
         else:
             neural_network = Neural_Network()
             self.gradients = neural_network.grad(self.model, np.array(self.training_data_assigned), np.array(self.training_label_assigned), central_server)
+            self.data_epoch = central_server.num_epoch
             lock_time = int(self.data_length / self.comp_power) - 1
             self.lock += lock_time
 
@@ -150,7 +162,6 @@ class Vehicle:
 
     # Assume the car directly uploads the gradients to the central server and update the model of central server
     def upload_gradients_to_central_server(self, central_server, update: bool, bounded: bool):
-        # If the gradients is still from the last epoch
         if self.data_epoch != central_server.num_epoch:
             self.free_up()
             return
@@ -181,10 +192,6 @@ class Vehicle:
 
     # Assume the car uploads the gradients to one RSU for the RSU to accumulate the received gradients
     def upload_gradients_to_rsu(self, rsu_list, central_server):
-        # If the gradients is still from the last epoch
-        if self.data_epoch != central_server.num_epoch:
-            self.free_up()
-            return
         closest_rsu = self.closest_rsu(rsu_list)
         if closest_rsu:
             closest_rsu.accumulative_gradients[self.data_index] = self.gradients
@@ -229,10 +236,9 @@ class Vehicle:
                 vehi.rsu_assigned = self.rsu_assigned
                 vehi.model = self.model
                 vehi.data_index = self.data_index
-                vehi.data_epoch = self.data_epoch
                 vehi.gradients_index = self.gradients_index
                 return True
-            elif not simulation.vehicle_dict[vehicle.attrib['id']].training_data_assigned:
+            elif len(simulation.vehicle_dict[vehicle.attrib['id']].training_data_assigned) != 0:
                 vehi = simulation.vehicle_dict[vehicle.attrib['id']]
                 vehi = simulation.vehicle_dict[vehicle.attrib['id']]
                 vehi.training_data_assigned = self.training_data_assigned
@@ -242,7 +248,6 @@ class Vehicle:
                 vehi.rsu_assigned = self.rsu_assigned
                 vehi.model = self.model
                 vehi.data_index = self.data_index
-                vehi.data_epoch = self.data_epoch
                 vehi.gradients_index = self.gradients_index
                 return True
         return False
@@ -269,9 +274,9 @@ class Vehicle:
         #         simulation.central_server.bounded_staleness += 1
         #     self.transfer_data_to_central_server(simulation.central_server)
         if self.rsu_assigned:
-            if self.compute_completed():
-                simulation.central_server.bounded_staleness += 1
-            self.transfer_data_to_vehicle(simulation, timestep)
+            if not self.transfer_data_to_vehicle(simulation, timestep):
+                if self.gradients is not None:
+                    simulation.central_server.bounded_staleness += 1
 
     def locked(self):
         return self.lock > 0
@@ -280,6 +285,12 @@ class Vehicle:
         self.lock -= 1
 
     def free_up(self):
+        self.model = None
+        self.gradients = None
+        self.upload_complete = False
+        self.gradients_index = None
+
+    def free_up_c(self):
         self.training_data_assigned = []
         self.num_training_data_downloaded = 0
         self.training_label_assigned = []
@@ -310,17 +321,20 @@ class RSU:
     - vehicle_traffic
     - traffic_proportion
     """
-    def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range):
+    def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range, traffic_proportion):
         self.rsu_id = rsu_id
         self.rsu_x = rsu_x
         self.rsu_y = rsu_y
         self.rsu_range = rsu_range
-        self.dataset = deque()
+        self.dataset = []
+        self.data_buffer = []
+        self.data_length = 0
+        self.data_index = 0
         self.model = None
         self.accumulative_gradients = {}
         self.num_accumulative_gradients = 0
         self.vehicle_traffic = 0
-        self.traffic_proportion = 1 / cfg['simulation']['num_rsu']
+        self.traffic_proportion = traffic_proportion
 
     def low_on_data(self):
         return len(self.dataset) < 10
@@ -517,11 +531,11 @@ class Central_Server:
         test_images = test_images/255
 
         batch_size = cfg['neural_network']['batch_size']
-        self.dataset = tf.data.Dataset.from_tensor_slices((train_images, train_labels)).shuffle(int(num_training_data/batch_size)).batch(batch_size)
+        self.dataset = tf.data.Dataset.from_tensor_slices((train_images, train_labels)).batch(batch_size)
         self.num_mini_batches = len(list(self.dataset))
-        self.train_dataset = []
-        self.train_dataset_index = []
+        self.train_dataset = list(self.dataset.enumerate().as_numpy_iterator())
         self.test_dataset = tf.data.Dataset.from_tensor_slices((test_images, test_labels)).batch(batch_size)
+        self.train_dataset_index = self.train_dataset.copy()
         # The structure of the neural network
         self.model = tf.keras.Sequential([
                     tf.keras.layers.Dense(128, activation=tf.nn.relu, input_shape=(784,)),  # input shape required
@@ -539,13 +553,14 @@ class Central_Server:
         self.assigned_data = set()
         self.received_data = set()
 
-    # Initially distribute 1/4 of the data to each RSU
+    # Initially distribute all of the data to each RSU
     def distribute_to_rsu(self, degree_of_overlap = 0):
         for rsu in self.rsu_list:
-            initial_distribution = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
+            initial_distribution = int(self.num_mini_batches * rsu.traffic_proportion)+1
             data = self.train_dataset[:initial_distribution]
             indexs = set(map(lambda x: x[0], data))
-            rsu.dataset = deque(data)
+            rsu.dataset = data
+            rsu.data_length = len(indexs)
             self.assigned_data |= indexs
             rsu.model = self.model
             del self.train_dataset[:initial_distribution]
@@ -567,6 +582,14 @@ class Central_Server:
             for _ in range(num_redistributed):
                 rsu.dataset.append(self.train_dataset_index[random.choice(tuple(self.assigned_data))])
 
+    def redistribute_to_rsu_buffer(self):
+        for rsu in self.rsu_list:
+            rsu.data_buffer = []
+            for _ in range(cfg['simulation']['num_rsu']):
+                rsu.data_buffer.append(self.train_dataset_index[random.choice(tuple(self.assigned_data))])
+
+
+
     def epoch_completed(self):
         return len(self.received_data) == self.num_mini_batches
         # return self.gradients_received >= self.num_mini_batches
@@ -586,16 +609,13 @@ class Central_Server:
                                                                 self.epoch_accuracy.result()))
 
     def new_epoch(self):
-        # Need to loop through the dataset each epoch to shuffle the data
-        for i, (x, y) in self.dataset.enumerate().as_numpy_iterator():
-            self.train_dataset.append((i,(x.tolist(), y.tolist())))
-        self.train_dataset_index = self.train_dataset.copy()
+        for rsu in self.rsu_list:
+            rsu.data_index = 0
         self.epoch_loss_avg = tf.keras.metrics.Mean()
         self.epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
         self.num_epoch += 1
-        self.assigned_data = set()
+        self.assigned_data = self.received_data
         self.received_data = set()
-        self.distribute_to_rsu()
         self.gradients_received = 0
 
 
@@ -678,14 +698,14 @@ class SUMO_Dataset:
         junction_list = np.random.choice(root.findall('junction'), rsu_nums, replace=False)
         for i in range(rsu_nums):
             id = 'rsu' + str(i)
-            rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range))
+            rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range, 1/cfg['simulation']['num_rsu']))
         return rsu_list
 
     def rsuList(self, rsu_range, rsu_nums, junction_list):
         rsu_list = []
         for i in range(rsu_nums):
             id = 'rsu' + str(i)
-            rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range))
+            rsu_list.append(RSU(id, float(junction_list[i][0].attrib['x']), float(junction_list[i][0].attrib['y']), rsu_range, junction_list[i][1]))
         return rsu_list
 
 class Simulation:

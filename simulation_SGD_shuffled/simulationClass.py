@@ -152,6 +152,7 @@ class Vehicle:
     def upload_gradients_to_central_server(self, central_server, update: bool, bounded: bool):
         # If the gradients is still from the last epoch
         if self.data_epoch != central_server.num_epoch:
+            central_server.bounded_staleness += 1
             self.free_up()
             return
         neural_network = Neural_Network()
@@ -269,9 +270,10 @@ class Vehicle:
         #         simulation.central_server.bounded_staleness += 1
         #     self.transfer_data_to_central_server(simulation.central_server)
         if self.rsu_assigned:
-            if self.compute_completed():
-                simulation.central_server.bounded_staleness += 1
-            self.transfer_data_to_vehicle(simulation, timestep)
+            if not self.transfer_data_to_vehicle(simulation, timestep):
+                if self.gradients is not None:
+                    simulation.central_server.bounded_staleness += 1
+
 
     def locked(self):
         return self.lock > 0
@@ -310,7 +312,7 @@ class RSU:
     - vehicle_traffic
     - traffic_proportion
     """
-    def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range):
+    def __init__(self, rsu_id, rsu_x, rsu_y, rsu_range, traffic_proportion):
         self.rsu_id = rsu_id
         self.rsu_x = rsu_x
         self.rsu_y = rsu_y
@@ -320,7 +322,7 @@ class RSU:
         self.accumulative_gradients = {}
         self.num_accumulative_gradients = 0
         self.vehicle_traffic = 0
-        self.traffic_proportion = 1 / cfg['simulation']['num_rsu']
+        self.traffic_proportion = traffic_proportion
 
     def low_on_data(self):
         return len(self.dataset) < 10
@@ -540,9 +542,9 @@ class Central_Server:
         self.received_data = set()
 
     # Initially distribute 1/4 of the data to each RSU
-    def distribute_to_rsu(self, degree_of_overlap = 0):
+    def distribute_to_rsu(self):
         for rsu in self.rsu_list:
-            initial_distribution = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
+            initial_distribution = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)+1
             data = self.train_dataset[:initial_distribution]
             indexs = set(map(lambda x: x[0], data))
             rsu.dataset = deque(data)
@@ -678,14 +680,14 @@ class SUMO_Dataset:
         junction_list = np.random.choice(root.findall('junction'), rsu_nums, replace=False)
         for i in range(rsu_nums):
             id = 'rsu' + str(i)
-            rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range))
+            rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range, 1/cfg['simulation']['num_rsu']))
         return rsu_list
 
     def rsuList(self, rsu_range, rsu_nums, junction_list):
         rsu_list = []
         for i in range(rsu_nums):
             id = 'rsu' + str(i)
-            rsu_list.append(RSU(id, float(junction_list[i].attrib['x']), float(junction_list[i].attrib['y']), rsu_range))
+            rsu_list.append(RSU(id, float(junction_list[i][0].attrib['x']), float(junction_list[i][0].attrib['y']), rsu_range, junction_list[i][1]))
         return rsu_list
 
 class Simulation:

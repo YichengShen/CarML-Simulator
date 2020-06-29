@@ -39,7 +39,7 @@ num_rsu = cfg['simulation']['num_rsu']
 # Try different eps until we find enough clusters (>= number of rsu we want to place)
 # If this fails, we need to lower our RSU number
 while n_clusters_ < num_rsu:
-    # print("Testing DBSCAN with min_samples={} and eps={}".format(min_samples, eps))
+    print("Testing DBSCAN with min_samples={} and eps={}".format(min_samples, eps))
     db = DBSCAN(eps=eps, min_samples=min_samples).fit(coord)
     labels = db.labels_ # The labels has the same shape as coord, each index i of label tells which cluster index i of coord is in
     n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
@@ -159,13 +159,17 @@ for key in order:
 
 x_rsu = []
 y_rsu = []
+total_traffic = 0
 output_junctions = []
+for key, junction in junction_dic.items():
+    if junction is not None:
+        total_traffic += dicc[key]
 for key, junction in junction_dic.items():
     if junction is not None:
         print("Cluster:", key, "Coord:", (float(junction.attrib['x']), float(junction.attrib['y'])), "Traffic Density:", dicc[key])
         x_rsu.append(float(junction.attrib['x']))
         y_rsu.append(float(junction.attrib['y']))
-        output_junctions.append(junction)
+        output_junctions.append((junction, dicc[key]/total_traffic))
 
 
 # Plot RSU as red stars
