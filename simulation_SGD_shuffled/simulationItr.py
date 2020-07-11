@@ -1,3 +1,4 @@
+import random
 from simulationClass import *
 from  locationPicker_v3 import output_junctions
 import xml.etree.ElementTree as ET 
@@ -7,8 +8,12 @@ def simulate(simulation):
     tree = ET.parse(simulation.FCD_file)
     root = tree.getroot()
 
+
     # For each time step (sec) in the FCD file 
     for timestep in root:
+
+        # print(simulation.central_server.gradients_received)
+
         # Maximum training epochs
         if simulation.central_server.num_epoch <= cfg['neural_network']['epoch']:
             # Calculate in-real-time RSU traffic every 10 minutes
@@ -44,6 +49,13 @@ def simulate(simulation):
                 vehi.set_properties(float(vehicle.attrib['x']),
                                     float(vehicle.attrib['y']),
                                     float(vehicle.attrib['speed']))
+                
+                # Chance for the vehicle to have malfunction
+                if random.random() < cfg['vehicle']['failure_rate']:
+                    vehi.malfunction = True
+                if vehi.malfunction:
+                    continue
+
                 # Download if not finished downloading
                 if not vehi.download_completed():
                     rsus_in_range = vehi.in_range_rsus(simulation.rsu_list)
@@ -61,13 +73,13 @@ def simulate(simulation):
                         if not vehi.compute_completed():
                             # update=True -> compute from central server
                             # update=False -> compute from RSU
-                            vehi.compute_gradients(simulation.central_server, update=True, bounded=True)
+                            vehi.compute_gradients(simulation.central_server, update=True, bounded=False)
                         # If finished computing
                         else:
                             # Upload the gradients if not finished uploading
                             if not vehi.upload_completed():
                                 # One needs to be commented out
-                                vehi.upload_gradients_to_central_server(simulation.central_server, update=True, bounded=True)
+                                vehi.upload_gradients_to_central_server(simulation.central_server, update=True, bounded=False)
                                 # vehi.upload_gradients_to_rsu(simulation.rsu_list, simulation.central_server)
                             else:
                                 vehi.free_up()

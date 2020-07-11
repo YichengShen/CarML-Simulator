@@ -57,6 +57,7 @@ class Vehicle:
         self.gradients_index = None                 # The index of the central server model when the car downloads the model
         self.upload_complete = False
         self.lock = 0
+        self.malfunction = False
 
     def set_properties(self, x, y, speed):
         self.x = x
@@ -265,14 +266,14 @@ class Vehicle:
         #             self.transfer_data_to_rsu(closest_rsu)
         #         else:
         #             self.transfer_data_to_central_server(simulation.central_server)
-        # if self.rsu_assigned:
-        #     if self.compute_completed():
-        #         simulation.central_server.bounded_staleness += 1
-        #     self.transfer_data_to_central_server(simulation.central_server)
         if self.rsu_assigned:
-            if not self.transfer_data_to_vehicle(simulation, timestep):
-                if self.gradients is not None:
-                    simulation.central_server.bounded_staleness += 1
+            if self.compute_completed():
+                simulation.central_server.bounded_staleness += 1
+            self.transfer_data_to_central_server(simulation.central_server)
+        # if self.rsu_assigned:
+        #     if not self.transfer_data_to_vehicle(simulation, timestep):
+        #         if self.gradients is not None:
+        #             simulation.central_server.bounded_staleness += 1
 
 
     def locked(self):
@@ -360,127 +361,6 @@ class RSU:
             self.model = central_server.model
             self.accumulative_gradients = {}
             self.num_accumulative_gradients = 0
-
-
-# class Central_Server:
-#     """
-#     Central Server object for Car ML Simulator.
-#     Attributes:
-#     - dataset
-#     - num_mini_batches
-#     - train_dataset
-#     - test_dataset
-#     - model
-#     - epoch_loss_avg
-#     - epoch_accuracy
-#     - num_epoch
-#     - rsu_list
-#     - accumulative_gradients
-#     - gradients_received
-#     - bounded_staleness
-#     - assigned_data
-#     - received_data
-#     """
-#     def __init__(self, rsu_list):
-#         train, test = tf.keras.datasets.mnist.load_data()
-
-#         # Normalize the training data to fit the model
-#         train_images, train_labels = train
-#         num_training_data = cfg['simulation']['num_training_data']
-#         train_images, train_labels = train_images[:num_training_data], train_labels[:num_training_data]
-#         train_images = train_images.reshape(train_images.shape[0], 784)
-#         train_images = train_images/255
-
-#         # Normalize the testing data to fit the model
-#         test_images, test_labels = test
-#         test_images, test_labels = test_images, test_labels
-#         test_images = test_images.reshape(test_images.shape[0], 784)
-#         test_images = test_images/255
-
-#         batch_size = cfg['neural_network']['batch_size']
-#         self.dataset = tf.data.Dataset.from_tensor_slices((train_images, train_labels)).shuffle(int(num_training_data/batch_size)).batch(batch_size)
-#         self.num_mini_batches = len(list(self.dataset))
-#         self.train_dataset = []
-#         self.train_dataset_index = []
-#         self.test_dataset = tf.data.Dataset.from_tensor_slices((test_images, test_labels)).batch(batch_size)
-#         # The structure of the neural network
-#         self.model = tf.keras.Sequential([
-#                     tf.keras.layers.Dense(128, activation=tf.nn.relu, input_shape=(784,)),  # input shape required
-#                     # tf.keras.layers.Dense(10, activation=tf.nn.relu),
-#                     tf.keras.layers.Dense(10)
-#         ])
-#         self.epoch_loss_avg = None
-#         self.epoch_accuracy = None
-#         self.num_epoch = 0
-#         self.rsu_list = rsu_list
-#         self.num_distributed = 0
-#         self.accumulative_gradients = None
-#         self.gradients_received = 0     # Number of gradients received from vehicle in each epoch (Async)
-#         self.bounded_staleness = cfg['simulation']['bounded_staleness']
-
-#         self.assigned_data = set()
-#         self.received_data = set()
-
-#     # Initially distribute 1/4 of the data to each RSU
-#     def distribute_to_rsu(self):
-#         for rsu in self.rsu_list:
-#             initial_distribution = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
-#             num_distributed = self.num_distributed
-#             self.num_distributed = num_distributed + initial_distribution
-#             data = self.train_dataset[num_distributed:self.num_distributed]
-#             indexs = set(map(lambda x: x[0], data))
-#             rsu.dataset = deque(data)
-#             self.assigned_data |= indexs
-#             rsu.model = self.model
-#             # del self.train_dataset[:total_distribution]
-    
-#     # Redistribute part of the data to RSU when the RSU is running low on data
-#     def redistribute_to_rsu(self, rsu):
-#         if self.num_distributed < self.num_mini_batches:
-#             num_redistributed = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
-#             num_distributed = self.num_distributed
-#             self.num_distributed = min(num_distributed + num_redistributed, self.num_mini_batches)
-#             data = self.train_dataset[num_distributed:self.num_distributed]
-#             indexs = set(map(lambda x: x[0], data))
-#             rsu.dataset.extend(data)
-#             self.assigned_data |= indexs
-#             # del self.train_dataset[:num_redistributed]
-#         elif self.assigned_data:
-#             num_redistributed = int(0.25 * self.num_mini_batches * rsu.traffic_proportion)
-#             for _ in range(min(num_redistributed, len(self.assigned_data))):
-#                 rsu.dataset.append(self.train_dataset[random.choice(tuple(self.assigned_data))])
-
-#     def epoch_completed(self):
-#         return len(self.received_data) == self.num_mini_batches
-#         # return self.gradients_received >= self.num_mini_batches
-
-#     # Update the model with its accumulative gradients
-#     # Used for batch gradient descent
-#     def update_model(self):
-#         if self.accumulative_gradients is not None:
-#             neural_network = Neural_Network()
-#             self.accumulative_gradients = np.true_divide(self.accumulative_gradients, self.gradients_received)
-#             gradient_zip = zip(self.accumulative_gradients, self.model.trainable_variables)
-#             neural_network.optimizer.apply_gradients(gradient_zip)
-
-#     def print_accuracy(self):
-#         print("Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}".format(self.num_epoch,
-#                                                                 self.epoch_loss_avg.result(),
-#                                                                 self.epoch_accuracy.result()))
-
-#     def new_epoch(self):
-#         # Need to loop through the dataset each epoch to shuffle the data
-#         for i, (x, y) in self.dataset.enumerate().as_numpy_iterator():
-#             self.train_dataset.append((i,(x.tolist(), y.tolist())))
-#         # self.train_dataset_index = self.train_dataset.copy()
-#         self.epoch_loss_avg = tf.keras.metrics.Mean()
-#         self.epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
-#         self.num_epoch += 1
-#         self.assigned_data = set()
-#         self.received_data = set()
-#         self.num_distributed = 0
-#         self.gradients_received = 0
-#         self.distribute_to_rsu()
 
 
 class Central_Server:
@@ -589,9 +469,11 @@ class Central_Server:
 
     def new_epoch(self):
         # Need to loop through the dataset each epoch to shuffle the data
+        self.train_dataset = []
         for i, (x, y) in self.dataset.enumerate().as_numpy_iterator():
-            self.train_dataset.append((i,(x.tolist(), y.tolist())))
-        self.train_dataset_index = self.train_dataset.copy()
+            for _ in range(cfg['simulation']['replication_factor']):
+                self.train_dataset.append((i,(x.tolist(), y.tolist())))
+            self.train_dataset_index.append((i,(x.tolist(), y.tolist())))
         self.epoch_loss_avg = tf.keras.metrics.Mean()
         self.epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
         self.num_epoch += 1

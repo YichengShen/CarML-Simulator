@@ -18,12 +18,12 @@ num_points = 0 # number of rows in fcd file
 tree = ET.parse(cfg['simulation']['FCD_FILE'])
 root = tree.getroot()
 for timestep in root:
-    # if float(timestep.attrib['time']) % 10 == 0:
-    for vehicle in timestep.findall('vehicle'):
-        x.append(float(vehicle.attrib['x'])*100)
-        y.append(float(vehicle.attrib['y'])*100)
-        coord.append([float(vehicle.attrib['x']), float(vehicle.attrib['y'])])
-        num_points += 1
+    if float(timestep.attrib['time']) % 3 == 0:
+        for vehicle in timestep.findall('vehicle'):
+            x.append(float(vehicle.attrib['x'])*100)
+            y.append(float(vehicle.attrib['y'])*100)
+            coord.append([float(vehicle.attrib['x']), float(vehicle.attrib['y'])])
+            num_points += 1
 
 # Print the location of each vehicle in each time step in a scatter plot
 # plt.scatter(x, y, s=0.05)
@@ -32,8 +32,8 @@ for timestep in root:
 # The value of eps and min_samples determines how each cluster is formed
 # Higher min_samples or lower eps indicate higher density necessary to form a cluster
 # More can be read about them on https://scikit-learn.org/stable/modules/clustering.html#dbscan and https://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html#sklearn.cluster.DBSCAN
-min_samples = round(num_points * 0.001) # 0.1% of traffic points
-eps = 5 # the initial eps value
+min_samples = round(num_points * 0.002) # 0.1% of traffic points
+eps = 20 # the initial eps value
 n_clusters_ = -1
 num_rsu = cfg['simulation']['num_rsu']
 # Try different eps until we find enough clusters (>= number of rsu we want to place)
@@ -65,14 +65,14 @@ for i, x in enumerate(labels):
 def largestN(n):
     return order[1:n+1]
 
-# largest_dic = {}
-# largest = largestN(num_rsu)
-# for key, value in dic.items():
-#     if key in largest and key != -1:
-#         largest_dic[key] = value
-#         plt.scatter(value['x'], value['y'], s=0.05, c='black')
-#     else:
-#         plt.scatter(value['x'], value['y'], s=0.05)
+largest_dic = {}
+largest = largestN(num_rsu)
+for key, value in dic.items():
+    if key in largest and key != -1:
+        largest_dic[key] = value
+        plt.scatter(value['x'], value['y'], s=0.05, c='black')
+    else:
+        plt.scatter(value['x'], value['y'], s=0.05)
 # plt.show()
 
 # Find the center of a cluster
@@ -173,5 +173,5 @@ for key, junction in junction_dic.items():
 
 
 # Plot RSU as red stars
-# plt.scatter(x_rsu, y_rsu, s=50, c='red', marker='*')
-# plt.show()
+plt.scatter(x_rsu, y_rsu, s=50, c='red', marker='*')
+plt.show()

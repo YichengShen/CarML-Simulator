@@ -3,6 +3,7 @@ vehicle:
   max_data_rows: 25
 
 
+
 timer:
   time_remove_rsu_assigned: 20
 
