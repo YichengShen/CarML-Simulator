@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
+import hdbscan
 import yaml
 
 file = open('config.yml', 'r')
@@ -18,7 +19,7 @@ num_points = 0 # number of rows in fcd file
 tree = ET.parse(cfg['simulation']['FCD_FILE'])
 root = tree.getroot()
 for timestep in root:
-    if float(timestep.attrib['time']) % 3 == 0:
+    if float(timestep.attrib['time']) % 10 == 0:
         for vehicle in timestep.findall('vehicle'):
             x.append(float(vehicle.attrib['x'])*100)
             y.append(float(vehicle.attrib['y'])*100)
@@ -38,16 +39,19 @@ n_clusters_ = -1
 num_rsu = cfg['simulation']['num_rsu']
 # Try different eps until we find enough clusters (>= number of rsu we want to place)
 # If this fails, we need to lower our RSU number
-while n_clusters_ < num_rsu:
-    print("Testing DBSCAN with min_samples={} and eps={}".format(min_samples, eps))
-    db = DBSCAN(eps=eps, min_samples=min_samples).fit(coord)
-    labels = db.labels_ # The labels has the same shape as coord, each index i of label tells which cluster index i of coord is in
-    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
-    eps += 5
-    # When increasing eps no longer contributes to getting more clusters, break
-    if eps > 100 or n_clusters_ == 1:
-        print("The number of RSUs is much larger than the number of clusters that can be formed.")
-        break
+# while n_clusters_ < num_rsu:
+#     print("Testing DBSCAN with min_samples={} and eps={}".format(min_samples, eps))
+#     db = DBSCAN(eps=eps, min_samples=min_samples).fit(coord)
+#     labels = db.labels_ # The labels has the same shape as coord, each index i of label tells which cluster index i of coord is in
+#     n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+#     eps += 5
+#     # When increasing eps no longer contributes to getting more clusters, break
+#     if eps > 100 or n_clusters_ == 1:
+#         print("The number of RSUs is much larger than the number of clusters that can be formed.")
+#         break
+
+clusterer = hdbscan.HDBSCAN(min_cluster_size=int(num_points*0.0025))
+labels = clusterer.fit_predict(coord)
 
 # Print the density of each cluster
 # Note: The cluster with the key -1 are noise (outliers) and we don't care about it
